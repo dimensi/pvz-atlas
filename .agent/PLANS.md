@@ -50,6 +50,57 @@ Maintain a checklist while implementing.
 
 ---
 
+## Mobile Accessible Edit Flows Without Native Prompts
+
+### Goal
+Replace production `alert`, `confirm`, and `prompt` usage with mobile-first accessible React UI primitives for PVZ editing, owner assignment, notes, status changes, confirmations, map marker actions, and non-blocking feedback.
+
+### Current repo state
+Native browser API usage is concentrated in `src/components/points/PointsListClient.tsx` for owner assignment, owner creation, status changes, and comments. `src/components/map/LeafletMapClient.tsx` already has a custom marker bottom sheet but only exposes route details. The project uses Next.js, React, TypeScript, Dexie, Leaflet, lucide icons, global CSS, and no Tailwind/shadcn setup. Local-first mutation helpers already exist in `src/lib/sync/local-actions.ts`.
+
+### Data and API impact
+Affected client entities are `Point`, `Owner`, and `Visit`. No route handlers, Google Sheets schema, or environment variables change. UI mutations must continue to call local domain actions (`updatePointLocal`, `createOwnerLocal`, `addVisitLocal`) so IndexedDB is written first and `Change` records are queued before sync.
+
+### Approach
+Initialize real shadcn/ui support with `components.json`, Tailwind v4/PostCSS, shadcn registry components under `src/components/ui`, and standard shadcn utilities. Add shared point action flow components for edit point, assign owner/create owner, note edit, status selection, and close confirmation. Replace prompt handlers in the list with those flows and use labeled card actions instead of icon-only controls. Replace the custom map marker bottom sheet with the shared Vaul Drawer surface and expose route, assign owner, status, note, and edit actions there. Update global CSS for Tailwind theme tokens, app-specific mobile layouts, and z-index layering above Leaflet.
+
+### Conflict and offline behavior
+All edits remain local-first. Owner assignment, status, comments, and point field edits call `updatePointLocal` with patches, which writes IndexedDB and enqueues an update `Change` with the current `baseVersion`. Owner creation calls `createOwnerLocal` and then patches the point owner. Visit actions call `addVisitLocal`. If offline, the UI shows the saved local state after cache refresh and the toast tells the operator the change is queued. On push, the server compares `baseVersion` against Sheets and creates conflicts for competing manual edits instead of silently dropping local changes.
+
+### UI behavior
+Primary edit flows use bottom drawers on mobile and dialog-style layout on larger screens. Forms include labels, inline validation, save/cancel buttons, and large tap targets. Owner assignment supports search, owner selection, inline new-owner creation, and clearing the owner. Notes use a textarea. Status changes use an accessible select with Russian labels and existing visual badges. Destructive close/mark-closed uses AlertDialog. Feedback uses non-blocking toasts. Map marker details use the shared Vaul Drawer surface with the required actions. Point cards show icon+text action labels so the operator does not need to infer actions from icons.
+
+### Tests
+Add a static Vitest check that fails on production `alert`, `confirm`, or `prompt` usage in `src`, excluding test files. Add focused component tests where practical for the new point action flows to verify local action callbacks are invoked through form submissions rather than native prompts.
+
+### Risks
+Adding shadcn/Tailwind primitives can increase bundle size and CSS surface; keep dependencies narrow and components small. Radix/vaul components are client-side only, so wrappers must use `"use client"`. Existing global CSS has custom class names, so the shadcn theme tokens must map to existing app variables and avoid broad visual churn. Leaflet uses z-index values up to about 1000, so drawer/dialog/select portals must stay above map panes and controls.
+
+### Rollback
+Remove the new UI wrappers and action flow components, revert `PointsListClient.tsx`, `LeafletMapClient.tsx`, global CSS additions, package dependency additions, and the forbidden-native-API test. No data migration or backend rollback is required.
+
+### Progress
+- [x] Inspect current native browser API usage.
+- [x] Inspect package and UI setup.
+- [x] Add minimal accessible UI primitives and toast provider.
+- [x] Replace list prompt flows with drawers/dialogs.
+- [x] Extend map marker bottom sheet actions.
+- [x] Add tests/static scan.
+- [x] Update AGENTS.md UI component rules.
+- [x] Run lint, typecheck, tests, and build.
+
+Verification results:
+- `rg -n "\b(window\.)?(alert|confirm|prompt)\s*\(" src --glob '!*.test.*' --glob '!*.spec.*'`: no production matches
+- `npm run lint`: passed
+- `npm run typecheck`: passed
+- `npm test`: passed, 16 files and 57 tests
+- `npm run build`: passed
+- Browser smoke on existing dev server `http://localhost:3000`: `/points` rendered with labeled card actions and no `.icon-action` elements, edit drawer opened with form fields, owner drawer opened with search/new-owner/clear controls, close AlertDialog opened without applying the destructive action, `/map` rendered 24 Leaflet markers, marker click opened a `.ui-drawer-content` details drawer, and old custom `.map-bottom-sheet` / `.map-sheet-backdrop` elements were absent.
+- After shadcn/Tailwind install: `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build` passed. Browser z-index check on `/map`: drawer overlay `z-index: 2000`, drawer content `z-index: 2010`, select content `z-index: 2020`, Leaflet top controls `z-index: 1000`, markers `z-index: 299`.
+- Marker drawer sizing fix: disabled Vaul bottom drawer `::after`, removed marker drawer content scrolling, made marker actions a two-column grid, and verified in browser that drawer `::after` is `display: none`, `scrollTop` is `0`, action grid has two columns, and the drawer height is content-sized.
+
+---
+
 ## Data Model and Sheets Schema Mapping
 
 ### Goal

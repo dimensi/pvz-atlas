@@ -4,15 +4,27 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Archive,
   CheckCircle2,
   Clock3,
   Crosshair,
+  MessageSquare,
   LocateFixed,
   MapPinned,
   Navigation,
-  X
+  Pencil,
+  UserPlus
 } from "lucide-react";
+import { toast } from "sonner";
 import type { Change, Conflict, PointStatus } from "@/lib/data-model/types";
+import { PointActionDialogs, type PointAction, type PointActionItem } from "@/components/points/PointActionDialogs";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle
+} from "@/components/ui/drawer";
 import {
   createMapPointItems,
   DEFAULT_NEARBY_RADIUS_METERS,
@@ -103,10 +115,12 @@ function formatDistance(value: number | null): string | null {
 export default function LeafletMapClient() {
   const {
     snapshot: state,
-    error,
+    error: cacheError,
     isOnline,
     isLoadingCache,
-    isRefreshing
+    isRefreshing,
+    refreshCache,
+    refreshOnline
   } = useOnlineCachedSnapshot();
   const [mode, setMode] = useState<MapQuickFilter>("all");
   const [brand, setBrand] = useState("");
@@ -117,6 +131,9 @@ export default function LeafletMapClient() {
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
+  const [mutationError, setMutationError] = useState<string | null>(null);
+  const [activeAction, setActiveAction] = useState<PointAction | null>(null);
+  const [activeItem, setActiveItem] = useState<PointActionItem | null>(null);
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
@@ -158,6 +175,41 @@ export default function LeafletMapClient() {
   );
   const hasLocalRows = state.points.length > 0 || state.owners.length > 0 || state.visits.length > 0;
   const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
+  const error = mutationError ?? cacheError;
+
+  const availableOwners = useMemo(
+    () => state.owners.filter((owner) => owner.deletedAt === null),
+    [state.owners]
+  );
+
+  const runMutation = async (
+    mutation: () => Promise<unknown>,
+    successMessage: string
+  ): Promise<boolean> => {
+    try {
+      setMutationError(null);
+      await mutation();
+      await refreshCache();
+      if (isOnline) {
+        void refreshOnline();
+      } else {
+        toast.warning("Офлайн: изменение дождется синхронизации.");
+      }
+      toast.success(successMessage);
+      return true;
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : "Не удалось сохранить изменение.";
+      setMutationError(message);
+      toast.error(message);
+      return false;
+    }
+  };
+
+  const openAction = (action: PointAction, item: PointActionItem) => {
+    setSelectedPointId(null);
+    setActiveItem(item);
+    setActiveAction(action);
+  };
 
   const handleNearby = () => {
     if (mode === "nearby") {
@@ -310,10 +362,6 @@ export default function LeafletMapClient() {
           <strong>{coordinateSplit.withoutCoordinates.length}</strong>
           <span>без координат</span>
         </div>
-        <div>
-          <strong>{state.points.length}</strong>
-          <span>в IndexedDB</span>
-        </div>
       </section>
 
       {coordinateSplit.withoutCoordinates.length > 0 ? (
@@ -336,55 +384,113 @@ export default function LeafletMapClient() {
         </section>
       ) : null}
 
-      {selectedItem ? (
-        <div className="map-sheet-backdrop" onClick={() => setSelectedPointId(null)}>
-          <aside
-            className="map-bottom-sheet"
-            aria-label="Детали ПВЗ"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <button
-              className="sheet-close"
-              type="button"
-              title="Закрыть"
-              aria-label="Закрыть"
-              onClick={() => setSelectedPointId(null)}
-            >
-              <X size={20} aria-hidden="true" />
-            </button>
-            <div className="point-meta-row">
-              <span className="brand-pill">{selectedItem.point.brand}</span>
-              <span className={statusClassName(selectedItem.point.status)}>
-                {POINT_STATUS_LABELS[selectedItem.point.status]}
-              </span>
-              {formatDistance(selectedItem.distanceMeters) ? (
-                <span className="distance-pill">{formatDistance(selectedItem.distanceMeters)}</span>
-              ) : null}
+      <Drawer
+        open={Boolean(selectedItem)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedPointId(null);
+          }
+        }}
+      >
+        <DrawerContent className="marker-drawer-content mx-auto h-auto w-full max-w-[720px] overflow-visible border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
+          <DrawerHeader>
+            <DrawerTitle>Детали ПВЗ</DrawerTitle>
+            <DrawerDescription>
+              {selectedItem ? `${selectedItem.point.brand}, ${selectedItem.point.address}` : "ПВЗ не выбран"}
+            </DrawerDescription>
+          </DrawerHeader>
+          {selectedItem ? (
+            <div className="map-marker-details">
+              <div className="point-meta-row">
+                <span className="brand-pill">{selectedItem.point.brand}</span>
+                <span className={statusClassName(selectedItem.point.status)}>
+                  {POINT_STATUS_LABELS[selectedItem.point.status]}
+                </span>
+                {formatDistance(selectedItem.distanceMeters) ? (
+                  <span className="distance-pill">
+                    {formatDistance(selectedItem.distanceMeters)}
+                  </span>
+                ) : null}
+              </div>
+              <div>
+                <h3>{selectedItem.point.address}</h3>
+                <p>{selectedItem.point.city}</p>
+              </div>
+              <div className="point-details">
+                <span>{selectedItem.owner?.name ?? "Владелец не назначен"}</span>
+                {selectedItem.point.comment ? <span>{selectedItem.point.comment}</span> : null}
+              </div>
+              <a
+                className="button"
+                href={buildYandexRouteUrl({
+                  lat: selectedItem.coordinates.lat,
+                  lon: selectedItem.coordinates.lon,
+                  label: `${selectedItem.point.brand}, ${selectedItem.point.address}`
+                })}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <Navigation size={18} aria-hidden="true" />
+                Маршрут
+              </a>
+              <div className="map-sheet-actions" aria-label="Действия с ПВЗ на карте">
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => openAction("owner", selectedItem)}
+                >
+                  <UserPlus size={18} aria-hidden="true" />
+                  Назначить владельца
+                </button>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => openAction("status", selectedItem)}
+                >
+                  <AlertTriangle size={18} aria-hidden="true" />
+                  Изменить статус
+                </button>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => openAction("note", selectedItem)}
+                >
+                  <MessageSquare size={18} aria-hidden="true" />
+                  Заметка
+                </button>
+                <button
+                  className="button secondary"
+                  type="button"
+                  onClick={() => openAction("edit", selectedItem)}
+                >
+                  <Pencil size={18} aria-hidden="true" />
+                  Редактировать
+                </button>
+                <button
+                  className="button destructive"
+                  type="button"
+                  onClick={() => openAction("close", selectedItem)}
+                >
+                  <Archive size={18} aria-hidden="true" />
+                  Закрыть
+                </button>
+              </div>
             </div>
-            <div>
-              <h3>{selectedItem.point.address}</h3>
-              <p>{selectedItem.point.city}</p>
-            </div>
-            <div className="point-details">
-              <span>{selectedItem.owner?.name ?? "Владелец не назначен"}</span>
-              {selectedItem.point.comment ? <span>{selectedItem.point.comment}</span> : null}
-            </div>
-            <a
-              className="button"
-              href={buildYandexRouteUrl({
-                lat: selectedItem.coordinates.lat,
-                lon: selectedItem.coordinates.lon,
-                label: `${selectedItem.point.brand}, ${selectedItem.point.address}`
-              })}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <Navigation size={18} aria-hidden="true" />
-              Маршрут
-            </a>
-          </aside>
-        </div>
-      ) : null}
+          ) : null}
+        </DrawerContent>
+      </Drawer>
+      <PointActionDialogs
+        action={activeAction}
+        item={activeItem}
+        owners={availableOwners}
+        onActionChange={(nextAction) => {
+          setActiveAction(nextAction);
+          if (nextAction === null) {
+            setActiveItem(null);
+          }
+        }}
+        runMutation={runMutation}
+      />
     </div>
   );
 }

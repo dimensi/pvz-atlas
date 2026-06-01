@@ -215,9 +215,9 @@ Use mature accessible React primitives for:
 - cards
 - toasts
 
-For the React/Next.js app, prefer shadcn/ui-style components, Radix UI primitives, and Vaul-style drawers where appropriate. Do not add Svelte-only packages such as bits-ui.
+For the React/Next.js app, prefer shadcn/ui registry components, Radix UI primitives, and Vaul-style drawers where appropriate. Do not add Svelte-only packages such as bits-ui.
 
-Destructive actions require explicit confirmation UI. Non-blocking feedback should use toasts or inline status messages. UI edit flows must call local domain actions and keep the IndexedDB/Change-queue path intact.
+Mobile edit flows should use bottom drawers/sheets. Destructive actions require AlertDialog or equivalent explicit confirmation UI. Non-blocking feedback should use toasts or inline status messages. UI edit flows must call local domain actions and keep the IndexedDB/Change-queue path intact.
 
 ## Map rules
 

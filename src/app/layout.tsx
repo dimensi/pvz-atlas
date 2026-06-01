@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import Link from "next/link";
 import { ListTodo, Map, Plus, RefreshCw } from "lucide-react";
+import { Toaster } from "@/components/ui/sonner";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
 
@@ -52,6 +53,7 @@ export default function RootLayout({
               </Link>
             ))}
           </nav>
+          <Toaster />
         </div>
       </body>
     </html>

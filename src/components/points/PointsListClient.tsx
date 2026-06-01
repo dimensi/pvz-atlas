@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
+  Archive,
   Check,
   CheckCircle2,
   Clock3,
@@ -13,12 +14,9 @@ import {
   UserPlus,
   WifiOff
 } from "lucide-react";
-import type { Change, Conflict, Owner, PointStatus, Visit } from "@/lib/data-model/types";
-import {
-  addVisitLocal,
-  createOwnerLocal,
-  updatePointLocal
-} from "@/lib/sync/local-actions";
+import { toast } from "sonner";
+import type { Change, Conflict, PointStatus, Visit } from "@/lib/data-model/types";
+import { addVisitLocal } from "@/lib/sync/local-actions";
 import { useOnlineCachedSnapshot } from "@/lib/sync/use-online-cached-snapshot";
 import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
 import {
@@ -29,6 +27,7 @@ import {
   POINT_STATUS_LABELS,
   type PointListItem
 } from "@/lib/points/list";
+import { PointActionDialogs, type PointAction } from "./PointActionDialogs";
 
 type SyncState = "synced" | "pending" | "conflict" | "offline" | "refreshing";
 
@@ -41,12 +40,6 @@ const SYNC_LABELS: Record<SyncState, string> = {
   offline: "Офлайн",
   refreshing: "Обновляю"
 };
-
-function sortOwners(owners: Owner[]): Owner[] {
-  return [...owners].sort((left, right) =>
-    left.name.localeCompare(right.name, "ru-RU", { sensitivity: "base" })
-  );
-}
 
 function changeTouchesPoint(change: Change, pointId: string): boolean {
   if (change.entityName === "point") {
@@ -160,6 +153,8 @@ export default function PointsListClient() {
   const [brand, setBrand] = useState("");
   const [status, setStatus] = useState("");
   const [mutationError, setMutationError] = useState<string | null>(null);
+  const [activeAction, setActiveAction] = useState<PointAction | null>(null);
+  const [activeItem, setActiveItem] = useState<PointListItem | null>(null);
 
   const items = useMemo(
     () => createPointListItems(state.points, state.owners),
@@ -178,6 +173,10 @@ export default function PointsListClient() {
       ),
     [brand, items, noOwnerOnly, search, status]
   );
+  const availableOwners = useMemo(
+    () => state.owners.filter((owner) => owner.deletedAt === null),
+    [state.owners]
+  );
   const globalSyncState = getGlobalSyncState(
     state.pendingChanges,
     state.conflicts,
@@ -188,91 +187,39 @@ export default function PointsListClient() {
   const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
   const error = mutationError ?? cacheError;
 
-  const runMutation = async (mutation: () => Promise<unknown>) => {
+  const runMutation = async (
+    mutation: () => Promise<unknown>,
+    successMessage: string
+  ): Promise<boolean> => {
     try {
       setMutationError(null);
       await mutation();
       await refreshCache();
       if (isOnline) {
         void refreshOnline();
+      } else {
+        toast.warning("Офлайн: изменение дождется синхронизации.");
       }
+      toast.success(successMessage);
+      return true;
     } catch (caught) {
-      setMutationError(caught instanceof Error ? caught.message : "Не удалось сохранить изменение.");
+      const message = caught instanceof Error ? caught.message : "Не удалось сохранить изменение.";
+      setMutationError(message);
+      toast.error(message);
+      return false;
     }
   };
 
-  const handleAssignOwner = (item: PointListItem) => {
-    const owners = sortOwners(state.owners);
-    if (owners.length === 0) {
-      window.alert("Сначала создайте владельца для назначения.");
-      return;
-    }
-
-    const options = owners.map((owner, index) => `${index + 1}. ${owner.name}`).join("\n");
-    const answer = window.prompt(`Выберите владельца:\n0. Без владельца\n${options}`);
-    if (answer === null) {
-      return;
-    }
-
-    const trimmed = answer.trim();
-    const owner =
-      trimmed === "0"
-        ? null
-        : owners[Number(trimmed) - 1] ??
-          owners.find((candidate) => candidate.name.toLocaleLowerCase("ru-RU") === trimmed.toLocaleLowerCase("ru-RU"));
-
-    if (trimmed !== "0" && !owner) {
-      window.alert("Владелец не найден.");
-      return;
-    }
-
-    const nextOwnerId = owner?.id ?? null;
-    if (item.point.ownerId === nextOwnerId) {
-      return;
-    }
-
-    void runMutation(() => updatePointLocal(item.point.id, { ownerId: nextOwnerId }));
-  };
-
-  const handleCreateOwner = (item: PointListItem) => {
-    const name = window.prompt("Имя владельца");
-    const trimmedName = name?.trim();
-    if (!trimmedName) {
-      return;
-    }
-
-    void runMutation(async () => {
-      const owner = await createOwnerLocal({ name: trimmedName });
-      await updatePointLocal(item.point.id, { ownerId: owner.id });
-    });
+  const openAction = (action: PointAction, item: PointListItem) => {
+    setActiveItem(item);
+    setActiveAction(action);
   };
 
   const handleVisited = (item: PointListItem) => {
-    void runMutation(() => addVisitLocal({ pointId: item.point.id, status: "completed" }));
-  };
-
-  const handleStatus = (item: PointListItem) => {
-    const options = STATUS_OPTIONS.map((option) => `${option} - ${POINT_STATUS_LABELS[option]}`).join("\n");
-    const answer = window.prompt(`Статус:\n${options}`, item.point.status);
-    if (!answer) {
-      return;
-    }
-
-    const nextStatus = answer.trim();
-    if (!isKnownStatus(nextStatus) || nextStatus === item.point.status) {
-      return;
-    }
-
-    void runMutation(() => updatePointLocal(item.point.id, { status: nextStatus }));
-  };
-
-  const handleComment = (item: PointListItem) => {
-    const answer = window.prompt("Комментарий", item.point.comment ?? "");
-    if (answer === null || answer === item.point.comment) {
-      return;
-    }
-
-    void runMutation(() => updatePointLocal(item.point.id, { comment: answer.trim() || null }));
+    void runMutation(
+      () => addVisitLocal({ pointId: item.point.id, status: "completed" }),
+      "Визит сохранен локально, изменение добавлено в очередь синхронизации."
+    );
   };
 
   return (
@@ -408,7 +355,7 @@ export default function PointsListClient() {
                     <div className="point-actions" aria-label={`Действия для ${item.point.address}`}>
                       {canRoute ? (
                         <a
-                          className="icon-action primary"
+                          className="card-action primary"
                           href={buildYandexRouteUrl({
                             lat: item.point.lat as number,
                             lon: item.point.lon as number,
@@ -420,62 +367,79 @@ export default function PointsListClient() {
                           aria-label="Маршрут"
                         >
                           <MapPinned size={19} aria-hidden="true" />
+                          <span>Маршрут</span>
                         </a>
                       ) : (
                         <button
-                          className="icon-action"
+                          className="card-action"
                           type="button"
                           title="Нет координат"
                           aria-label="Нет координат"
                           disabled
                         >
                           <MapPinned size={19} aria-hidden="true" />
+                          <span>Нет координат</span>
                         </button>
                       )}
                       <button
-                        className="icon-action"
+                        className="card-action"
+                        type="button"
+                        title="Редактировать ПВЗ"
+                        aria-label="Редактировать ПВЗ"
+                        onClick={() => openAction("edit", item)}
+                      >
+                        <Pencil size={18} aria-hidden="true" />
+                        <span>Редактировать</span>
+                      </button>
+                      <button
+                        className="card-action"
                         type="button"
                         title="Назначить владельца"
                         aria-label="Назначить владельца"
-                        onClick={() => handleAssignOwner(item)}
-                      >
-                        <Pencil size={18} aria-hidden="true" />
-                      </button>
-                      <button
-                        className="icon-action"
-                        type="button"
-                        title="Создать владельца"
-                        aria-label="Создать владельца"
-                        onClick={() => handleCreateOwner(item)}
+                        onClick={() => openAction("owner", item)}
                       >
                         <UserPlus size={18} aria-hidden="true" />
+                        <span>Владелец</span>
                       </button>
                       <button
-                        className="icon-action"
+                        className="card-action"
                         type="button"
                         title="Отметить визит"
                         aria-label="Отметить визит"
                         onClick={() => handleVisited(item)}
                       >
                         <Check size={18} aria-hidden="true" />
+                        <span>Визит</span>
                       </button>
                       <button
-                        className="icon-action"
+                        className="card-action"
                         type="button"
                         title="Изменить статус"
                         aria-label="Изменить статус"
-                        onClick={() => handleStatus(item)}
+                        onClick={() => openAction("status", item)}
                       >
                         <AlertTriangle size={18} aria-hidden="true" />
+                        <span>Статус</span>
                       </button>
                       <button
-                        className="icon-action"
+                        className="card-action"
                         type="button"
                         title="Комментарий"
                         aria-label="Комментарий"
-                        onClick={() => handleComment(item)}
+                        onClick={() => openAction("note", item)}
                       >
                         <MessageSquare size={18} aria-hidden="true" />
+                        <span>Заметка</span>
+                      </button>
+                      <button
+                        className="card-action destructive"
+                        type="button"
+                        title="Закрыть ПВЗ"
+                        aria-label="Закрыть ПВЗ"
+                        onClick={() => openAction("close", item)}
+                      >
+                        <Archive size={18} aria-hidden="true" />
+                        <span>Закрыть</span>
                       </button>
                     </div>
                   </article>
@@ -485,6 +449,18 @@ export default function PointsListClient() {
           </section>
         ))
       )}
+      <PointActionDialogs
+        action={activeAction}
+        item={activeItem}
+        owners={availableOwners}
+        onActionChange={(nextAction) => {
+          setActiveAction(nextAction);
+          if (nextAction === null) {
+            setActiveItem(null);
+          }
+        }}
+        runMutation={runMutation}
+      />
     </div>
   );
 }
