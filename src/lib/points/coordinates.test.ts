@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parsePointCoordinateInputs } from "./coordinates";
+import { parsePointCoordinateInputs, parsePointCoordinatesText } from "./coordinates";
 
 describe("point coordinate input parsing", () => {
   it("accepts empty optional coordinates", () => {
@@ -16,5 +16,27 @@ describe("point coordinate input parsing", () => {
   it("rejects incomplete and out-of-range coordinates", () => {
     expect(parsePointCoordinateInputs("55.75", "")).toMatchObject({ ok: false });
     expect(parsePointCoordinateInputs("100", "37.61")).toMatchObject({ ok: false });
+  });
+
+  it("accepts a single pasted coordinate field", () => {
+    expect(parsePointCoordinatesText("55.123, 37.123")).toEqual({
+      ok: true,
+      coordinates: { lat: 55.123, lon: 37.123 }
+    });
+    expect(parsePointCoordinatesText("55.123 37.123")).toEqual({
+      ok: true,
+      coordinates: { lat: 55.123, lon: 37.123 }
+    });
+  });
+
+  it("accepts map urls with ll as lon,lat and q as lat,lon", () => {
+    expect(parsePointCoordinatesText("https://example.test/maps?ll=37.123,55.123&z=16")).toEqual({
+      ok: true,
+      coordinates: { lat: 55.123, lon: 37.123 }
+    });
+    expect(parsePointCoordinatesText("https://example.test/search?q=55.987,37.987")).toEqual({
+      ok: true,
+      coordinates: { lat: 55.987, lon: 37.987 }
+    });
   });
 });

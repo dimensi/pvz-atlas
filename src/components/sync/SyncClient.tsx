@@ -5,12 +5,6 @@ import { RefreshCw } from "lucide-react";
 import { db } from "@/lib/indexeddb/db";
 import { runSync } from "@/lib/sync/engine";
 
-const steps = [
-  "Загрузить удаленные изменения",
-  "Отправить локальные патчи",
-  "Загрузить объединенное состояние"
-];
-
 interface SyncSummary {
   pendingChanges: number;
   unresolvedConflicts: number;
@@ -63,8 +57,8 @@ export default function SyncClient() {
 
       setStatus(
         result.pushed
-          ? `Отправлено: ${result.pushed.applied.length}, конфликтов: ${result.pushed.conflicts.length}`
-          : "Удаленные изменения загружены, локальной очереди не было."
+          ? `Отправлено: ${result.pushed.applied.length}. Конфликтов: ${result.pushed.conflicts.length}.`
+          : "Данные обновлены."
       );
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Синхронизация не выполнена.");
@@ -76,36 +70,21 @@ export default function SyncClient() {
   return (
     <div className="page-stack">
       <section>
-        <h2 className="page-title">Синхронизация</h2>
-        <p className="lead">
-          Список и карта обновляются автоматически при наличии сети. Здесь можно
-          проверить очередь и принудительно запустить полный цикл pull, push, pull.
-        </p>
+        <h2 className="page-title">Состояние данных</h2>
+        <p className="lead">Список и карта обновляются автоматически при наличии сети.</p>
       </section>
 
       <section className="card">
-        <h3>Очередь</h3>
+        <h3>На устройстве</h3>
         <p>
-          Изменений: {summary.pendingChanges}. Конфликтов: {summary.unresolvedConflicts}.
+          Будет отправлено: {summary.pendingChanges}. Конфликтов: {summary.unresolvedConflicts}.
         </p>
         {error ? <div className="error-banner">{error}</div> : null}
         {status ? <p>{status}</p> : null}
         <button className="button" type="button" onClick={handleSync} disabled={isSyncing}>
           <RefreshCw size={18} aria-hidden="true" />
-          {isSyncing ? "Синхронизация..." : "Принудительно синхронизировать"}
+          {isSyncing ? "Обновляю..." : "Обновить сейчас"}
         </button>
-      </section>
-
-      <section className="section">
-        <h3 className="section-title">Процесс</h3>
-        {steps.map((step, index) => (
-          <article className="card" key={step}>
-            <h3>
-              {index + 1}. {step}
-            </h3>
-            <p>Шаг выполняется sync engine через typed API clients.</p>
-          </article>
-        ))}
       </section>
     </div>
   );

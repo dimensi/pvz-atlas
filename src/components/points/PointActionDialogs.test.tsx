@@ -75,11 +75,9 @@ const owner = (overrides: Partial<Owner> & Pick<Owner, "id" | "name">): Owner =>
 });
 
 function renderOwnerDialog({
-  owners = [],
-  ownerUsageCounts = {}
+  owners = []
 }: {
   owners?: Owner[];
-  ownerUsageCounts?: Record<string, number>;
 } = {}) {
   const runMutation = vi.fn(async (mutation: () => Promise<unknown>) => {
     await mutation();
@@ -92,7 +90,6 @@ function renderOwnerDialog({
       action="owner"
       item={{ point, owner: null }}
       owners={owners}
-      ownerUsageCounts={ownerUsageCounts}
       onActionChange={onActionChange}
       runMutation={runMutation}
     />
@@ -146,31 +143,13 @@ describe("PointActionDialogs owner flow", () => {
     expect(onActionChange).not.toHaveBeenCalled();
   });
 
-  it("edits owners from the manage tab and blocks hiding owners with points", async () => {
-    localActionMocks.updateOwnerLocal.mockResolvedValue(
-      owner({ id: "owner-1", name: "Анна Петрова" })
-    );
-
+  it("does not expose owner management from the point owner drawer", () => {
     renderOwnerDialog({
-      owners: [owner({ id: "owner-1", name: "Анна" })],
-      ownerUsageCounts: { "owner-1": 2 }
+      owners: [owner({ id: "owner-1", name: "Анна" })]
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Управление" }));
-    fireEvent.click(screen.getByRole("button", { name: "Анна, 2 ПВЗ" }));
-    expect((screen.getByRole("button", { name: "Скрыть" }) as HTMLButtonElement).disabled).toBe(
-      true
-    );
-
-    fireEvent.change(screen.getByLabelText("Имя владельца"), {
-      target: { value: "Анна Петрова" }
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
-
-    await waitFor(() => {
-      expect(localActionMocks.updateOwnerLocal).toHaveBeenCalledWith("owner-1", {
-        name: "Анна Петрова"
-      });
-    });
+    expect(screen.queryByRole("tab", { name: "Управление" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Скрыть" })).toBeNull();
+    expect(localActionMocks.updateOwnerLocal).not.toHaveBeenCalled();
   });
 });

@@ -5,7 +5,6 @@ import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   Archive,
-  CheckCircle2,
   Clock3,
   Crosshair,
   MessageSquare,
@@ -16,8 +15,10 @@ import {
   UserPlus
 } from "lucide-react";
 import { toast } from "sonner";
-import type { Change, Conflict, PointStatus } from "@/lib/data-model/types";
+import { getBrandLabel } from "@/lib/brands";
+import type { PointStatus } from "@/lib/data-model/types";
 import { PointActionDialogs, type PointAction, type PointActionItem } from "@/components/points/PointActionDialogs";
+import { SyncHealthIndicator } from "@/components/sync/SyncHealthIndicator";
 import {
   Drawer,
   DrawerContent,
@@ -43,57 +44,10 @@ const LeafletMapView = dynamic(() => import("./LeafletMapView"), {
   loading: () => <div className="map-canvas map-canvas-loading" />
 });
 
-type SyncState = "synced" | "pending" | "conflict" | "offline" | "refreshing";
-
 const STATUS_OPTIONS: PointStatus[] = ["new", "active", "needs_review", "closed"];
-
-const SYNC_LABELS: Record<SyncState, string> = {
-  synced: "Синхр.",
-  pending: "В очереди",
-  conflict: "Конфликт",
-  offline: "Офлайн",
-  refreshing: "Обновляю"
-};
 
 function statusClassName(status: PointStatus): string {
   return `point-status point-status-${status.replace("_", "-")}`;
-}
-
-function syncIcon(state: SyncState) {
-  if (state === "conflict") {
-    return <AlertTriangle size={14} aria-hidden="true" />;
-  }
-
-  if (state === "pending" || state === "refreshing") {
-    return <Clock3 size={14} aria-hidden="true" />;
-  }
-
-  return <CheckCircle2 size={14} aria-hidden="true" />;
-}
-
-function getGlobalSyncState(
-  pendingChanges: Change[],
-  conflicts: Conflict[],
-  isOnline: boolean,
-  isRefreshing: boolean
-): SyncState {
-  if (isRefreshing) {
-    return "refreshing";
-  }
-
-  if (!isOnline) {
-    return "offline";
-  }
-
-  if (conflicts.length > 0) {
-    return "conflict";
-  }
-
-  if (pendingChanges.length > 0) {
-    return "pending";
-  }
-
-  return "synced";
 }
 
 function isKnownStatus(value: string): value is PointStatus {
@@ -167,12 +121,6 @@ export default function LeafletMapClient() {
     () => filteredMarkers.find((item) => item.point.id === selectedPointId) ?? null,
     [filteredMarkers, selectedPointId]
   );
-  const globalSyncState = getGlobalSyncState(
-    state.pendingChanges,
-    state.conflicts,
-    isOnline,
-    isRefreshing
-  );
   const hasLocalRows = state.points.length > 0 || state.owners.length > 0 || state.visits.length > 0;
   const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
   const error = mutationError ?? cacheError;
@@ -193,7 +141,7 @@ export default function LeafletMapClient() {
       if (isOnline) {
         void refreshOnline();
       } else {
-        toast.warning("Офлайн: изменение дождется синхронизации.");
+        toast.warning("Будет отправлено при сети.");
       }
       toast.success(successMessage);
       return true;
@@ -247,13 +195,15 @@ export default function LeafletMapClient() {
       <section className="points-list-header">
         <div>
           <h2 className="page-title">Карта</h2>
-          <p className="lead">Маркеры строятся из локальных координат IndexedDB.</p>
+          <p className="lead">Маркеры строятся из координат, сохраненных на устройстве.</p>
         </div>
-        <div className={`sync-badge sync-badge-${globalSyncState}`}>
-          {syncIcon(globalSyncState)}
-          <span>{SYNC_LABELS[globalSyncState]}</span>
-          {state.pendingChanges.length > 0 ? <strong>{state.pendingChanges.length}</strong> : null}
-        </div>
+        <SyncHealthIndicator
+          pendingChanges={state.pendingChanges}
+          conflicts={state.conflicts}
+          isOnline={isOnline}
+          isRefreshing={isRefreshing}
+          error={error}
+        />
       </section>
 
       <section className="list-controls" aria-label="Фильтры карты">
@@ -287,7 +237,7 @@ export default function LeafletMapClient() {
               <option value="">Все</option>
               {brands.map((brandOption) => (
                 <option key={brandOption} value={brandOption}>
-                  {brandOption}
+                  {getBrandLabel(brandOption)}
                 </option>
               ))}
             </select>
@@ -324,19 +274,19 @@ export default function LeafletMapClient() {
           <div className="map-overlay">
             <Clock3 size={22} aria-hidden="true" />
             <strong>Загрузка кэша</strong>
-            <span>Читаю IndexedDB на устройстве.</span>
+            <span>Читаю данные на устройстве.</span>
           </div>
         ) : isInitialOnlineLoad ? (
           <div className="map-overlay">
             <Clock3 size={22} aria-hidden="true" />
             <strong>Загружаю онлайн-данные</strong>
-            <span>Получаю актуальные ПВЗ и сохраняю их в IndexedDB.</span>
+            <span>Обновляю сохраненные ПВЗ.</span>
           </div>
         ) : coordinateSplit.withCoordinates.length === 0 ? (
           <div className="map-overlay">
             <MapPinned size={22} aria-hidden="true" />
             <strong>Нет точек с координатами</strong>
-            <span>Добавьте lat/lon вручную, через импорт или Google Sheets.</span>
+            <span>Добавьте координаты вручную или через импорт.</span>
           </div>
         ) : filteredMarkers.length === 0 ? (
           <div className="map-overlay">
@@ -373,7 +323,7 @@ export default function LeafletMapClient() {
           <div className="missing-coordinate-list">
             {coordinateSplit.withoutCoordinates.slice(0, 6).map((item) => (
               <article className="missing-coordinate-item" key={item.point.id}>
-                <span className="brand-pill">{item.point.brand}</span>
+                <span className="brand-pill">{getBrandLabel(item.point.brand)}</span>
                 <div>
                   <strong>{item.point.address}</strong>
                   <span>{item.point.city}</span>
@@ -396,13 +346,15 @@ export default function LeafletMapClient() {
           <DrawerHeader>
             <DrawerTitle>Детали ПВЗ</DrawerTitle>
             <DrawerDescription>
-              {selectedItem ? `${selectedItem.point.brand}, ${selectedItem.point.address}` : "ПВЗ не выбран"}
+              {selectedItem
+                ? `${getBrandLabel(selectedItem.point.brand)}, ${selectedItem.point.address}`
+                : "ПВЗ не выбран"}
             </DrawerDescription>
           </DrawerHeader>
           {selectedItem ? (
             <div className="map-marker-details">
               <div className="point-meta-row">
-                <span className="brand-pill">{selectedItem.point.brand}</span>
+                <span className="brand-pill">{getBrandLabel(selectedItem.point.brand)}</span>
                 <span className={statusClassName(selectedItem.point.status)}>
                   {POINT_STATUS_LABELS[selectedItem.point.status]}
                 </span>
@@ -424,8 +376,7 @@ export default function LeafletMapClient() {
                 className="button"
                 href={buildYandexRouteUrl({
                   lat: selectedItem.coordinates.lat,
-                  lon: selectedItem.coordinates.lon,
-                  label: `${selectedItem.point.brand}, ${selectedItem.point.address}`
+                  lon: selectedItem.coordinates.lon
                 })}
                 target="_blank"
                 rel="noreferrer"

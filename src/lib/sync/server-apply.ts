@@ -123,6 +123,18 @@ function patchEntries(change: Change): Array<[string, unknown]> {
   return Object.entries(change.patch).filter(([field]) => !immutablePatchFields.has(field));
 }
 
+function ownerHasActivePoints(snapshot: RemoteSnapshot, ownerId: string): boolean {
+  return snapshot.points.some((point) => point.deletedAt === null && point.ownerId === ownerId);
+}
+
+function isOwnerHideChange(change: Change): boolean {
+  return (
+    change.entityName === "owner" &&
+    change.patch.deletedAt !== undefined &&
+    change.patch.deletedAt !== null
+  );
+}
+
 function validateEntity(entityName: SyncableEntityName, entity: unknown): SyncableEntity {
   return entitySchema(entityName).parse(entity) as SyncableEntity;
 }
@@ -164,6 +176,23 @@ function applyUpdate(
     return {
       accepted: false,
       conflicts: [createConflict(change, "__record__", change.patch, null, now, idFactory, 0)]
+    };
+  }
+
+  if (isOwnerHideChange(change) && ownerHasActivePoints(snapshot, change.entityId)) {
+    return {
+      accepted: false,
+      conflicts: [
+        createConflict(
+          change,
+          "deletedAt",
+          change.patch.deletedAt,
+          "owner_has_assigned_points",
+          now,
+          idFactory,
+          current.version
+        )
+      ]
     };
   }
 
@@ -213,6 +242,23 @@ function applyDelete(
 
   if (current.deletedAt) {
     return { accepted: true, conflicts: [] };
+  }
+
+  if (change.entityName === "owner" && ownerHasActivePoints(snapshot, change.entityId)) {
+    return {
+      accepted: false,
+      conflicts: [
+        createConflict(
+          change,
+          "deletedAt",
+          now,
+          "owner_has_assigned_points",
+          now,
+          idFactory,
+          current.version
+        )
+      ]
+    };
   }
 
   if (current.version !== change.baseVersion) {

@@ -116,6 +116,6 @@ describe("point list helpers", () => {
       owners
     );
 
-    expect(getAvailableBrands(items)).toEqual(["Ozon", "WB", "Яндекс"]);
+    expect(getAvailableBrands(items)).toEqual(["Яндекс", "ozon", "wildberries"]);
   });
 });

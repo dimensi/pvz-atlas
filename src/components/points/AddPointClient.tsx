@@ -2,16 +2,23 @@
 
 import { useState } from "react";
 import { Save } from "lucide-react";
-import { parsePointCoordinateInputs } from "@/lib/points/coordinates";
+import { BRAND_OPTIONS, getStoredBrand, type BrandId } from "@/lib/brands";
+import { parsePointCoordinatesText } from "@/lib/points/coordinates";
 import { createPointLocal } from "@/lib/sync/local-actions";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue
+} from "@/components/ui/select";
 
 export default function AddPointClient() {
-  const [brand, setBrand] = useState("");
-  const [city, setCity] = useState("");
+  const [brand, setBrand] = useState<BrandId>("ozon");
+  const [city, setCity] = useState("Видное");
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
-  const [lat, setLat] = useState("");
-  const [lon, setLon] = useState("");
+  const [coordinates, setCoordinates] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -22,21 +29,21 @@ export default function AddPointClient() {
   };
 
   const validateRequiredFields = (): boolean => {
-    if (!brand.trim() || !city.trim() || !address.trim()) {
-      setError("Заполните бренд, город и адрес.");
+    if (!city.trim() || !address.trim()) {
+      setError("Заполните город и адрес.");
       return false;
     }
 
     return true;
   };
 
-  const handleSave = async () => {
+  const handleSave = async (mode: "close" | "again") => {
     resetStatus();
     if (!validateRequiredFields()) {
       return;
     }
 
-    const parsedCoordinates = parsePointCoordinateInputs(lat, lon);
+    const parsedCoordinates = parsePointCoordinatesText(coordinates);
     if (!parsedCoordinates.ok) {
       setError(parsedCoordinates.message);
       return;
@@ -45,20 +52,21 @@ export default function AddPointClient() {
     try {
       setIsSaving(true);
       await createPointLocal({
-        brand: brand.trim(),
+        brand: getStoredBrand(brand),
         city: city.trim(),
         address: address.trim(),
         lat: parsedCoordinates.coordinates?.lat ?? null,
         lon: parsedCoordinates.coordinates?.lon ?? null,
         comment: comment.trim() || null
       });
-      setBrand("");
-      setCity("");
+      if (mode === "close") {
+        setBrand("ozon");
+        setCity("Видное");
+      }
       setAddress("");
       setComment("");
-      setLat("");
-      setLon("");
-      setStatus("ПВЗ сохранен локально и добавлен в очередь синхронизации.");
+      setCoordinates("");
+      setStatus("Сохранено на устройстве.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось сохранить ПВЗ.");
     } finally {
@@ -70,22 +78,24 @@ export default function AddPointClient() {
     <div className="page-stack">
       <section>
         <h2 className="page-title">Добавить ПВЗ</h2>
-        <p className="lead">
-          Новая точка сначала сохранится локально, а затем попадет в очередь
-          синхронизации.
-        </p>
+        <p className="lead">Новая точка сохранится на устройстве и будет отправлена при сети.</p>
       </section>
 
       <form className="card form" onSubmit={(event) => event.preventDefault()}>
         <div className="field">
           <label htmlFor="brand">Бренд</label>
-          <input
-            id="brand"
-            name="brand"
-            placeholder="Ozon, WB, Яндекс"
-            value={brand}
-            onChange={(event) => setBrand(event.target.value)}
-          />
+          <Select value={brand} onValueChange={(value) => setBrand(value as BrandId)}>
+            <SelectTrigger id="brand" className="w-full min-h-12">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {BRAND_OPTIONS.map((brandOption) => (
+                <SelectItem key={brandOption.id} value={brandOption.id}>
+                  {brandOption.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="field">
           <label htmlFor="city">Город</label>
@@ -117,29 +127,16 @@ export default function AddPointClient() {
             onChange={(event) => setComment(event.target.value)}
           />
         </div>
-        <div className="form-grid-two">
-          <div className="field">
-            <label htmlFor="lat">Широта</label>
-            <input
-              id="lat"
-              inputMode="decimal"
-              name="lat"
-              placeholder="55.751244"
-              value={lat}
-              onChange={(event) => setLat(event.target.value)}
-            />
-          </div>
-          <div className="field">
-            <label htmlFor="lon">Долгота</label>
-            <input
-              id="lon"
-              inputMode="decimal"
-              name="lon"
-              placeholder="37.618423"
-              value={lon}
-              onChange={(event) => setLon(event.target.value)}
-            />
-          </div>
+        <div className="field">
+          <label htmlFor="coordinates">Координаты</label>
+          <input
+            id="coordinates"
+            inputMode="text"
+            name="coordinates"
+            placeholder="55.123, 37.123 или ссылка из карт"
+            value={coordinates}
+            onChange={(event) => setCoordinates(event.target.value)}
+          />
         </div>
         {error ? <div className="error-banner">{error}</div> : null}
         {status ? <p>{status}</p> : null}
@@ -147,11 +144,20 @@ export default function AddPointClient() {
           <button
             className="button"
             type="button"
-            onClick={handleSave}
+            onClick={() => void handleSave("close")}
             disabled={isSaving}
           >
             <Save size={18} aria-hidden="true" />
             {isSaving ? "Сохраняю..." : "Сохранить"}
+          </button>
+          <button
+            className="button secondary"
+            type="button"
+            onClick={() => void handleSave("again")}
+            disabled={isSaving}
+          >
+            <Save size={18} aria-hidden="true" />
+            Сохранить и добавить еще
           </button>
         </div>
       </form>

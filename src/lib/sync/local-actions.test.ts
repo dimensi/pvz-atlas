@@ -2,13 +2,15 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 const createPoint = vi.fn();
 const updatePointPatch = vi.fn();
+const updateVisitPatch = vi.fn();
 
 vi.mock("@/lib/indexeddb/repositories", () => ({
   createPoint,
   updatePointPatch,
   createOwner: vi.fn(),
   updateOwnerPatch: vi.fn(),
-  markPointVisited: vi.fn()
+  markPointVisited: vi.fn(),
+  updateVisitPatch
 }));
 
 describe("local mutation actions", () => {
@@ -44,5 +46,18 @@ describe("local mutation actions", () => {
     await updatePointLocal("point-1", { ownerId: "owner-1" });
 
     expect(updatePointPatch).toHaveBeenCalledWith("point-1", { ownerId: "owner-1" });
+  });
+
+  it("removes visits through the local change-queue repository", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+    updateVisitPatch.mockResolvedValue({ id: "visit-1", deletedAt: "2026-01-01T00:00:00.000Z" });
+
+    const { removeVisitLocal } = await import("./local-actions");
+    await removeVisitLocal("visit-1");
+
+    expect(updateVisitPatch).toHaveBeenCalledWith("visit-1", {
+      deletedAt: "2026-01-01T00:00:00.000Z"
+    });
   });
 });

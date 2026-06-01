@@ -449,6 +449,30 @@ select {
   gap: 8px;
 }
 
+.drawer-point-summary {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.drawer-point-summary strong,
+.drawer-point-summary span {
+  overflow-wrap: anywhere;
+}
+
+.drawer-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.drawer-action-grid button {
+  min-height: 46px;
+}
+
 .form {
   display: grid;
   gap: 12px;
@@ -606,6 +630,106 @@ select {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.owners-page {
+  gap: 14px;
+}
+
+.owners-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.owners-summary div {
+  min-height: 62px;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  text-align: center;
+}
+
+.owners-summary strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.owners-summary span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.owner-list,
+.owner-point-list {
+  display: grid;
+  gap: 8px;
+}
+
+.owner-card {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.owner-card button,
+.owner-card-muted {
+  width: 100%;
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+
+.owner-card span,
+.owner-card-muted div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.owner-card strong,
+.owner-card small,
+.owner-card-muted strong,
+.owner-card-muted span {
+  overflow-wrap: anywhere;
+}
+
+.owner-card small,
+.owner-card-muted span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.owner-card-muted {
+  background: var(--surface-muted);
+}
+
+.owner-details {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.owner-details span,
+.owner-details p {
+  margin: 0;
+  overflow-wrap: anywhere;
 }
 
 .map-summary div {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Change, Point } from "@/lib/data-model/types";
+import type { Change, Owner, Point } from "@/lib/data-model/types";
 import { applyChangesToSnapshot, type RemoteSnapshot } from "./server-apply";
 
 const now = "2026-01-02T03:04:05.000Z";
@@ -22,6 +22,18 @@ const point: Point = {
   updatedAt: now,
   deletedAt: null,
   version: 3
+};
+
+const owner: Owner = {
+  id: "owner-1",
+  name: "Owner One",
+  phone: null,
+  telegram: null,
+  comment: null,
+  createdAt: now,
+  updatedAt: now,
+  deletedAt: null,
+  version: 2
 };
 
 const snapshot = (overrides: Partial<RemoteSnapshot> = {}): RemoteSnapshot => ({
@@ -132,5 +144,64 @@ describe("server sync application", () => {
       updatedAt: later,
       version: 4
     });
+  });
+
+  it("blocks hiding an owner when remote points reference that owner", () => {
+    const result = applyChangesToSnapshot(
+      snapshot({
+        owners: [owner],
+        points: [{ ...point, ownerId: "owner-1" }]
+      }),
+      [
+        change({
+          entityName: "owner",
+          entityId: "owner-1",
+          baseVersion: 2,
+          patch: { deletedAt: later }
+        })
+      ],
+      options
+    );
+
+    expect(result.acceptedChangeIds).toEqual([]);
+    expect(result.snapshot.owners[0].deletedAt).toBeNull();
+    expect(result.conflicts).toEqual([
+      expect.objectContaining({
+        entityName: "owner",
+        entityId: "owner-1",
+        field: "deletedAt",
+        remoteValue: "owner_has_assigned_points"
+      })
+    ]);
+  });
+
+  it("blocks deleting an owner when remote points reference that owner", () => {
+    const result = applyChangesToSnapshot(
+      snapshot({
+        owners: [owner],
+        points: [{ ...point, ownerId: "owner-1" }]
+      }),
+      [
+        change({
+          entityName: "owner",
+          entityId: "owner-1",
+          operation: "delete",
+          baseVersion: 2,
+          patch: {}
+        })
+      ],
+      options
+    );
+
+    expect(result.acceptedChangeIds).toEqual([]);
+    expect(result.snapshot.owners[0].deletedAt).toBeNull();
+    expect(result.conflicts).toEqual([
+      expect.objectContaining({
+        entityName: "owner",
+        entityId: "owner-1",
+        field: "deletedAt",
+        remoteValue: "owner_has_assigned_points"
+      })
+    ]);
   });
 });

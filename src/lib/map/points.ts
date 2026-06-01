@@ -1,4 +1,5 @@
 import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
+import { brandMatchesFilter, createBrandFilterOptions, sortBrandValues } from "@/lib/brands";
 
 export const DEFAULT_NEARBY_RADIUS_METERS = 1200;
 
@@ -123,7 +124,7 @@ export function filterMapMarkers(
         return false;
       }
 
-      if (brand && normalizeFilter(item.point.brand) !== brand) {
+      if (brand && !brandMatchesFilter(item.point.brand, brand)) {
         return false;
       }
 
@@ -146,7 +147,7 @@ export function filterMapMarkers(
 }
 
 export function getAvailableMapBrands(items: MappablePointItem[]): string[] {
-  return [...new Set(items.map((item) => item.point.brand).filter(Boolean))].sort((left, right) =>
-    left.localeCompare(right, "ru-RU", { sensitivity: "base" })
-  );
+  return createBrandFilterOptions(items.map((item) => item.point.brand))
+    .map((option) => option.value)
+    .sort(sortBrandValues);
 }

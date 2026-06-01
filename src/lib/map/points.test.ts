@@ -136,6 +136,6 @@ describe("map point helpers", () => {
       )
     );
 
-    expect(getAvailableMapBrands(split.withCoordinates)).toEqual(["Ozon", "WB"]);
+    expect(getAvailableMapBrands(split.withCoordinates)).toEqual(["ozon", "wildberries"]);
   });
 });

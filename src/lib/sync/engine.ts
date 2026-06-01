@@ -128,14 +128,40 @@ async function applyPushResponse(database: PvzDatabase, response: PushResponse):
       database.meta
     ],
     async () => {
+      const pendingChanges = await getPendingLocalChanges(database);
+      const appliedChangeIds = new Set(response.applied);
+      const remainingChanges = pendingChanges.filter((change) => !appliedChangeIds.has(change.id));
+      const dirtyPoints = dirtyEntityIds(remainingChanges, "point");
+      const dirtyOwners = dirtyEntityIds(remainingChanges, "owner");
+      const dirtyVisits = dirtyEntityIds(remainingChanges, "visit");
+
+      for (const conflict of response.conflicts) {
+        if (conflict.entityName === "point") {
+          dirtyPoints.add(conflict.entityId);
+        } else if (conflict.entityName === "owner") {
+          dirtyOwners.add(conflict.entityId);
+        } else if (conflict.entityName === "visit") {
+          dirtyVisits.add(conflict.entityId);
+        }
+      }
+
       if (response.points && response.points.length > 0) {
-        await database.points.bulkPut(response.points);
+        const cleanPoints = response.points.filter((point) => !dirtyPoints.has(point.id));
+        if (cleanPoints.length > 0) {
+          await database.points.bulkPut(cleanPoints);
+        }
       }
       if (response.owners && response.owners.length > 0) {
-        await database.owners.bulkPut(response.owners);
+        const cleanOwners = response.owners.filter((owner) => !dirtyOwners.has(owner.id));
+        if (cleanOwners.length > 0) {
+          await database.owners.bulkPut(cleanOwners);
+        }
       }
       if (response.visits && response.visits.length > 0) {
-        await database.visits.bulkPut(response.visits);
+        const cleanVisits = response.visits.filter((visit) => !dirtyVisits.has(visit.id));
+        if (cleanVisits.length > 0) {
+          await database.visits.bulkPut(cleanVisits);
+        }
       }
       if (response.conflicts.length > 0) {
         await database.conflicts.bulkPut(response.conflicts);

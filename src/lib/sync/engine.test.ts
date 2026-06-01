@@ -205,6 +205,66 @@ describe("runSync", () => {
     });
   });
 
+  it("does not overwrite an entity when push response leaves another local change pending", async () => {
+    const commentChange: Change = {
+      ...change,
+      id: "change-2",
+      patch: { comment: "local note" },
+      createdAt: "2026-01-02T03:04:06.000Z",
+      updatedAt: "2026-01-02T03:04:06.000Z"
+    };
+    const localDirtyPoint = {
+      ...point,
+      ownerId: "owner-1",
+      comment: "local note",
+      version: 3,
+      updatedAt: "2026-01-02T03:04:30.000Z"
+    };
+    const database = createDatabase({
+      changes: [change, commentChange],
+      points: [localDirtyPoint]
+    });
+    const firstPull: PullResponse = {
+      serverTime: now,
+      points: [],
+      owners: [],
+      visits: [],
+      conflicts: []
+    };
+    const pushResponse: PushResponse = {
+      serverTime: pushedAt,
+      applied: ["change-1"],
+      rejected: [{ changeId: "change-2", reason: "conflict" }],
+      conflicts: [],
+      points: [{ ...point, ownerId: "owner-1", comment: null, version: 2, updatedAt: pushedAt }]
+    };
+    const finalPull: PullResponse = {
+      serverTime: finalTime,
+      points: [{ ...point, ownerId: "owner-1", comment: null, version: 2, updatedAt: pushedAt }],
+      owners: [],
+      visits: [],
+      conflicts: []
+    };
+    const api = {
+      pullSync: vi.fn().mockResolvedValueOnce(firstPull).mockResolvedValueOnce(finalPull),
+      pushSync: vi.fn().mockResolvedValue(pushResponse)
+    };
+
+    await runSync({ database, api, clientId: "client-1", since: null });
+
+    expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
+      id: "point-1",
+      ownerId: "owner-1",
+      comment: "local note"
+    });
+    expect((database.changes as unknown as FakeTable<Change>).items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: "change-1", syncedAt: pushedAt }),
+        expect.objectContaining({ id: "change-2", syncedAt: null })
+      ])
+    );
+  });
+
   it("does not push pending changes that already have unresolved conflicts", async () => {
     const conflict: Conflict = {
       id: "conflict-1",

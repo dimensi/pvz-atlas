@@ -1,4 +1,5 @@
 import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
+import { brandMatchesFilter, createBrandFilterOptions, sortBrandValues } from "@/lib/brands";
 
 export const POINT_STATUS_LABELS: Record<PointStatus, string> = {
   new: "Новый",
@@ -36,10 +37,6 @@ function normalizeQuery(value: string | null | undefined): string {
 
 function compareText(left: string, right: string): number {
   return left.localeCompare(right, "ru-RU", { sensitivity: "base" });
-}
-
-function compareBrand(left: string, right: string): number {
-  return left.localeCompare(right, "en-US", { sensitivity: "base" });
 }
 
 function compareItems(left: PointListItem, right: PointListItem): number {
@@ -96,7 +93,7 @@ export function filterPointListItems(
       return false;
     }
 
-    if (brand && normalizeQuery(item.point.brand) !== brand) {
+    if (brand && !brandMatchesFilter(item.point.brand, brand)) {
       return false;
     }
 
@@ -154,7 +151,9 @@ export function groupPointListItems(items: PointListItem[]): PointGroup[] {
 }
 
 export function getAvailableBrands(items: PointListItem[]): string[] {
-  return [...new Set(items.map((item) => item.point.brand).filter(Boolean))].sort(compareBrand);
+  return createBrandFilterOptions(items.map((item) => item.point.brand))
+    .map((option) => option.value)
+    .sort(sortBrandValues);
 }
 
 export function createFilteredPointGroups(

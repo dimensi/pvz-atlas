@@ -7,6 +7,7 @@ import {
   markPointVisited,
   updateOwnerPatch,
   updatePointPatch,
+  updateVisitPatch,
   type CreateOwnerInput,
   type CreatePointInput,
   type MarkPointVisitedInput
@@ -14,6 +15,7 @@ import {
 
 type PointLocalPatch = Parameters<typeof updatePointPatch>[1];
 type OwnerLocalPatch = Parameters<typeof updateOwnerPatch>[1];
+type VisitLocalPatch = Parameters<typeof updateVisitPatch>[1];
 
 export function createPointLocal(input: CreatePointInput): Promise<Point> {
   return createPoint(input);
@@ -33,4 +35,8 @@ export function updateOwnerLocal(ownerId: string, patch: OwnerLocalPatch): Promi
 
 export function addVisitLocal(input: MarkPointVisitedInput): Promise<Visit> {
   return markPointVisited(input);
+}
+
+export function removeVisitLocal(visitId: string): Promise<Visit> {
+  return updateVisitPatch(visitId, { deletedAt: new Date().toISOString() } satisfies VisitLocalPatch);
 }

@@ -1,7 +1,8 @@
 import type { Metadata, Viewport } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { ListTodo, Map, Plus, RefreshCw } from "lucide-react";
+import { ListTodo, Map, Plus, Users } from "lucide-react";
+import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import { Toaster } from "@/components/ui/sonner";
 import "leaflet/dist/leaflet.css";
 import "./globals.css";
@@ -10,6 +11,7 @@ export const metadata: Metadata = {
   applicationName: "ПВЗ Органайзер",
   title: "ПВЗ Органайзер",
   description: "Мобильное приложение для полевого учета пунктов выдачи",
+  manifest: "/manifest.webmanifest",
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
@@ -36,7 +38,7 @@ const tabs = [
   { href: "/points", label: "Список", icon: ListTodo },
   { href: "/map", label: "Карта", icon: Map },
   { href: "/add", label: "Добавить", icon: Plus },
-  { href: "/sync", label: "Синхр.", icon: RefreshCw }
+  { href: "/owners", label: "Владельцы", icon: Users }
 ];
 
 export default function RootLayout({
@@ -63,8 +65,8 @@ export default function RootLayout({
                 <h1>Полевой обход</h1>
               </div>
             </div>
-            <div className="status-pill" aria-label="Статус синхронизации">
-              Офлайн готов
+            <div className="status-pill" aria-label="Статус приложения">
+              На устройстве
             </div>
           </header>
           <main className="main-content">{children}</main>
@@ -79,6 +81,7 @@ export default function RootLayout({
             ))}
           </nav>
           <Toaster />
+          <ServiceWorkerRegister />
         </div>
       </body>
     </html>

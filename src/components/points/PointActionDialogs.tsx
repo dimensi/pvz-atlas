@@ -1,9 +1,17 @@
 "use client";
 
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Archive, Check, Pencil, Plus, Save, Search, Trash2, Users, X } from "lucide-react";
+import { Archive, Check, Pencil, Plus, Save, Search } from "lucide-react";
 import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
-import { createOwnerLocal, updateOwnerLocal, updatePointLocal } from "@/lib/sync/local-actions";
+import {
+  BRAND_OPTIONS,
+  canonicalizeBrand,
+  getBrandLabel,
+  getStoredBrand,
+  type BrandId
+} from "@/lib/brands";
+import { normalizeAddressPart } from "@/lib/data-model/source-key";
+import { createOwnerLocal, updatePointLocal } from "@/lib/sync/local-actions";
 import { POINT_STATUS_LABELS } from "@/lib/points/list";
 import {
   AlertDialog,
@@ -35,7 +43,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-export type PointAction = "edit" | "owner" | "note" | "status" | "close";
+export type PointAction = "details" | "edit" | "owner" | "note" | "status" | "close";
 
 export interface PointActionItem {
   point: Point;
@@ -46,7 +54,6 @@ interface PointActionDialogsProps {
   action: PointAction | null;
   item: PointActionItem | null;
   owners: Owner[];
-  ownerUsageCounts?: Record<string, number>;
   onActionChange: (action: PointAction | null) => void;
   runMutation: (mutation: () => Promise<unknown>, successMessage: string) => Promise<boolean>;
 }
@@ -54,7 +61,6 @@ interface PointActionDialogsProps {
 interface ActionFormProps {
   item: PointActionItem;
   owners: Owner[];
-  ownerUsageCounts?: Record<string, number>;
   close: () => void;
   runMutation: PointActionDialogsProps["runMutation"];
 }
@@ -117,11 +123,46 @@ function StatusSelect({
   );
 }
 
+function BrandSelect({
+  labelledBy,
+  value,
+  onChange
+}: {
+  labelledBy?: string;
+  value: BrandId;
+  onChange: (value: BrandId) => void;
+}) {
+  return (
+    <Select value={value} onValueChange={(nextValue) => onChange(nextValue as BrandId)}>
+      <SelectTrigger id={labelledBy} aria-labelledby={labelledBy}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {BRAND_OPTIONS.map((brand) => (
+          <SelectItem key={brand.id} value={brand.id}>
+            {brand.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function isActionDrawer(action: PointAction | null): boolean {
-  return action === "edit" || action === "owner" || action === "note" || action === "status";
+  return (
+    action === "details" ||
+    action === "edit" ||
+    action === "owner" ||
+    action === "note" ||
+    action === "status"
+  );
 }
 
 function drawerTitle(action: PointAction | null): string {
+  if (action === "details") {
+    return "Действия";
+  }
+
   if (action === "edit") {
     return "Редактировать ПВЗ";
   }
@@ -138,7 +179,8 @@ function drawerTitle(action: PointAction | null): string {
 }
 
 function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
-  const [brand, setBrand] = useState(item.point.brand);
+  const initialCanonicalBrand = canonicalizeBrand(item.point.brand);
+  const [brand, setBrand] = useState<BrandId>(initialCanonicalBrand ?? "other");
   const [city, setCity] = useState(item.point.city);
   const [address, setAddress] = useState(item.point.address);
   const [status, setStatus] = useState<PointStatus>(item.point.status);
@@ -150,7 +192,8 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const nextBrand = brand.trim();
+    const nextBrand =
+      brand === "other" && initialCanonicalBrand === null ? item.point.brand : getStoredBrand(brand);
     const nextCity = city.trim();
     const nextAddress = address.trim();
     const nextComment = comment.trim() || null;
@@ -162,16 +205,28 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
     }
 
     const patch: Partial<
-      Pick<Point, "brand" | "city" | "address" | "status" | "ownerId" | "comment">
+      Pick<
+        Point,
+        | "brand"
+        | "city"
+        | "address"
+        | "normalizedCity"
+        | "normalizedAddress"
+        | "status"
+        | "ownerId"
+        | "comment"
+      >
     > = {};
     if (nextBrand !== item.point.brand) {
       patch.brand = nextBrand;
     }
     if (nextCity !== item.point.city) {
       patch.city = nextCity;
+      patch.normalizedCity = normalizeAddressPart(nextCity);
     }
     if (nextAddress !== item.point.address) {
       patch.address = nextAddress;
+      patch.normalizedAddress = normalizeAddressPart(nextAddress);
     }
     if (status !== item.point.status) {
       patch.status = status;
@@ -192,7 +247,7 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
     setIsSaving(true);
     const saved = await runMutation(
       () => updatePointLocal(item.point.id, patch),
-      "ПВЗ сохранен локально, изменение добавлено в очередь синхронизации."
+      "Сохранено на устройстве."
     );
     setIsSaving(false);
 
@@ -204,7 +259,7 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
   return (
     <form className="ui-form" onSubmit={handleSubmit}>
       <Field id="point-brand" label="Бренд">
-        <Input id="point-brand" value={brand} onChange={(event) => setBrand(event.target.value)} />
+        <BrandSelect labelledBy="point-brand" value={brand} onChange={setBrand} />
       </Field>
       <Field id="point-city" label="Город">
         <Input id="point-city" value={city} onChange={(event) => setCity(event.target.value)} />
@@ -254,15 +309,8 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
   );
 }
 
-function OwnerForm({ close, item, owners, ownerUsageCounts = {}, runMutation }: ActionFormProps) {
-  const [mode, setMode] = useState<"assign" | "manage">("assign");
+function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
   const [ownerSearch, setOwnerSearch] = useState("");
-  const [editingOwnerId, setEditingOwnerId] = useState<string | null>(null);
-  const [ownerName, setOwnerName] = useState("");
-  const [ownerPhone, setOwnerPhone] = useState("");
-  const [ownerTelegram, setOwnerTelegram] = useState("");
-  const [ownerComment, setOwnerComment] = useState("");
-  const [deleteCandidate, setDeleteCandidate] = useState<Owner | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const sortedOwners = useMemo(() => sortOwners(owners), [owners]);
@@ -278,18 +326,6 @@ function OwnerForm({ close, item, owners, ownerUsageCounts = {}, runMutation }: 
     const query = normalize(ownerSearch);
     return query ? sortedOwners.find((owner) => normalize(owner.name) === query) ?? null : null;
   }, [ownerSearch, sortedOwners]);
-  const editingOwner = editingOwnerId
-    ? sortedOwners.find((owner) => owner.id === editingOwnerId) ?? null
-    : null;
-
-  const startEditingOwner = (owner: Owner) => {
-    setValidationError(null);
-    setEditingOwnerId(owner.id);
-    setOwnerName(owner.name);
-    setOwnerPhone(owner.phone ?? "");
-    setOwnerTelegram(owner.telegram ?? "");
-    setOwnerComment(owner.comment ?? "");
-  };
 
   const assignOwner = async (ownerId: string | null) => {
     if (ownerId === item.point.ownerId) {
@@ -300,7 +336,7 @@ function OwnerForm({ close, item, owners, ownerUsageCounts = {}, runMutation }: 
     setIsSaving(true);
     const saved = await runMutation(
       () => updatePointLocal(item.point.id, { ownerId }),
-      "Владелец назначен локально, изменение добавлено в очередь синхронизации."
+      "Сохранено на устройстве."
     );
     setIsSaving(false);
 
@@ -325,116 +361,14 @@ function OwnerForm({ close, item, owners, ownerUsageCounts = {}, runMutation }: 
     const saved = await runMutation(async () => {
       const owner = await createOwnerLocal({ name });
       await updatePointLocal(item.point.id, { ownerId: owner.id });
-    }, "Владелец создан и назначен локально, изменение добавлено в очередь синхронизации.");
+    }, "Сохранено на устройстве.");
     setIsSaving(false);
 
     return saved;
   };
 
-  const handleSaveOwner = async () => {
-    if (!editingOwner) {
-      return;
-    }
-
-    const nextName = ownerName.trim();
-    const nextPhone = ownerPhone.trim() || null;
-    const nextTelegram = ownerTelegram.trim() || null;
-    const nextComment = ownerComment.trim() || null;
-
-    if (!nextName) {
-      setValidationError("Имя владельца обязательно.");
-      return;
-    }
-
-    const patch: Partial<Pick<Owner, "name" | "phone" | "telegram" | "comment">> = {};
-    if (nextName !== editingOwner.name) {
-      patch.name = nextName;
-    }
-    if (nextPhone !== editingOwner.phone) {
-      patch.phone = nextPhone;
-    }
-    if (nextTelegram !== editingOwner.telegram) {
-      patch.telegram = nextTelegram;
-    }
-    if (nextComment !== editingOwner.comment) {
-      patch.comment = nextComment;
-    }
-
-    if (Object.keys(patch).length === 0) {
-      setEditingOwnerId(null);
-      return;
-    }
-
-    setValidationError(null);
-    setIsSaving(true);
-    const saved = await runMutation(
-      () => updateOwnerLocal(editingOwner.id, patch),
-      "Владелец сохранен локально, изменение добавлено в очередь синхронизации."
-    );
-    setIsSaving(false);
-
-    if (saved) {
-      setEditingOwnerId(null);
-    }
-  };
-
-  const handleArchiveOwner = async () => {
-    if (!deleteCandidate) {
-      return;
-    }
-
-    const usageCount = ownerUsageCounts[deleteCandidate.id] ?? 0;
-    if (usageCount > 0) {
-      setDeleteCandidate(null);
-      setValidationError("Сначала снимите владельца со всех ПВЗ.");
-      return;
-    }
-
-    setValidationError(null);
-    setIsSaving(true);
-    const saved = await runMutation(
-      () => updateOwnerLocal(deleteCandidate.id, { deletedAt: new Date().toISOString() }),
-      "Владелец скрыт локально, изменение добавлено в очередь синхронизации."
-    );
-    setIsSaving(false);
-
-    if (saved) {
-      setDeleteCandidate(null);
-      setEditingOwnerId(null);
-    }
-  };
-
   return (
     <div className="ui-form">
-      <div className="owner-dialog-tabs" role="tablist" aria-label="Режим владельцев">
-        <button
-          className={mode === "assign" ? "owner-dialog-tab-active" : ""}
-          type="button"
-          role="tab"
-          aria-selected={mode === "assign"}
-          onClick={() => {
-            setMode("assign");
-            setValidationError(null);
-          }}
-        >
-          <Check size={16} aria-hidden="true" />
-          Назначить
-        </button>
-        <button
-          className={mode === "manage" ? "owner-dialog-tab-active" : ""}
-          type="button"
-          role="tab"
-          aria-selected={mode === "manage"}
-          onClick={() => {
-            setMode("manage");
-            setValidationError(null);
-          }}
-        >
-          <Users size={16} aria-hidden="true" />
-          Управление
-        </button>
-      </div>
-
       <Field id="owner-search" label="Поиск владельца">
         <div className="ui-input-with-icon">
           <Search size={18} aria-hidden="true" />
@@ -447,177 +381,52 @@ function OwnerForm({ close, item, owners, ownerUsageCounts = {}, runMutation }: 
         </div>
       </Field>
 
-      {mode === "assign" ? (
-        <form className="ui-form" onSubmit={handleCreateAndAssign}>
-          <div className="owner-picker" aria-label="Владелец ПВЗ">
+      <form className="ui-form" onSubmit={handleCreateAndAssign}>
+        <div className="owner-picker" aria-label="Владелец ПВЗ">
+          <button
+            className={`owner-option ${item.point.ownerId === null ? "owner-option-active" : ""}`}
+            type="button"
+            disabled={isSaving}
+            onClick={() => void assignOwner(null)}
+          >
+            <span>Без владельца</span>
+            <span className="owner-option-icon">
+              {item.point.ownerId === null ? <Check size={18} aria-hidden="true" /> : null}
+            </span>
+          </button>
+          {filteredOwners.map((owner) => (
             <button
-              className={`owner-option ${item.point.ownerId === null ? "owner-option-active" : ""}`}
+              className={`owner-option ${item.point.ownerId === owner.id ? "owner-option-active" : ""}`}
+              key={owner.id}
               type="button"
               disabled={isSaving}
-              onClick={() => void assignOwner(null)}
+              onClick={() => void assignOwner(owner.id)}
             >
-              <span>Без владельца</span>
+              <span>{owner.name}</span>
               <span className="owner-option-icon">
-                {item.point.ownerId === null ? <Check size={18} aria-hidden="true" /> : null}
+                {item.point.ownerId === owner.id ? <Check size={18} aria-hidden="true" /> : null}
               </span>
             </button>
-            {filteredOwners.map((owner) => (
-              <button
-                className={`owner-option ${item.point.ownerId === owner.id ? "owner-option-active" : ""}`}
-                key={owner.id}
-                type="button"
-                disabled={isSaving}
-                onClick={() => void assignOwner(owner.id)}
-              >
-                <span>{owner.name}</span>
-                <span className="owner-option-icon">
-                  {item.point.ownerId === owner.id ? <Check size={18} aria-hidden="true" /> : null}
-                </span>
-              </button>
-            ))}
-            {filteredOwners.length === 0 ? (
-              <p className="ui-empty-note">Владелец не найден. Создайте и назначьте его ниже.</p>
-            ) : null}
-          </div>
-          {validationError ? <p className="ui-field-error">{validationError}</p> : null}
-          <DrawerFooter>
-            <Button type="submit" disabled={isSaving || !ownerSearch.trim()}>
-              <Plus size={18} aria-hidden="true" />
-              {isSaving
-                ? "Сохраняю..."
-                : exactSearchOwner
-                  ? `Назначить ${exactSearchOwner.name}`
-                  : "Создать и назначить"}
-            </Button>
-            <Button type="button" variant="secondary" onClick={close}>
-              Готово
-            </Button>
-          </DrawerFooter>
-        </form>
-      ) : (
-        <div className="ui-form">
-          <div className="owner-picker" aria-label="Управление владельцами">
-            {filteredOwners.map((owner) => {
-              const usageCount = ownerUsageCounts[owner.id] ?? 0;
-
-              return (
-                <button
-                  className={`owner-option ${editingOwnerId === owner.id ? "owner-option-active" : ""}`}
-                  key={owner.id}
-                  type="button"
-                  aria-label={`${owner.name}, ${usageCount > 0 ? `${usageCount} ПВЗ` : "без ПВЗ"}`}
-                  disabled={isSaving}
-                  onClick={() => startEditingOwner(owner)}
-                >
-                  <span>
-                    {owner.name}
-                    <small>{usageCount > 0 ? `${usageCount} ПВЗ` : "Без ПВЗ"}</small>
-                  </span>
-                  <Pencil size={18} aria-hidden="true" />
-                </button>
-              );
-            })}
-            {filteredOwners.length === 0 ? (
-              <p className="ui-empty-note">Владельцы не найдены.</p>
-            ) : null}
-          </div>
-
-          {editingOwner ? (
-            <div className="owner-editor">
-              <Field id="owner-manage-name" label="Имя владельца" error={validationError}>
-                <Input
-                  id="owner-manage-name"
-                  value={ownerName}
-                  onChange={(event) => setOwnerName(event.target.value)}
-                />
-              </Field>
-              <Field id="owner-manage-phone" label="Телефон">
-                <Input
-                  id="owner-manage-phone"
-                  value={ownerPhone}
-                  onChange={(event) => setOwnerPhone(event.target.value)}
-                />
-              </Field>
-              <Field id="owner-manage-telegram" label="Telegram">
-                <Input
-                  id="owner-manage-telegram"
-                  value={ownerTelegram}
-                  onChange={(event) => setOwnerTelegram(event.target.value)}
-                />
-              </Field>
-              <Field id="owner-manage-comment" label="Комментарий">
-                <Textarea
-                  id="owner-manage-comment"
-                  value={ownerComment}
-                  onChange={(event) => setOwnerComment(event.target.value)}
-                />
-              </Field>
-              <div className="owner-editor-actions">
-                <Button type="button" disabled={isSaving} onClick={() => void handleSaveOwner()}>
-                  <Save size={18} aria-hidden="true" />
-                  {isSaving ? "Сохраняю..." : "Сохранить"}
-                </Button>
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={isSaving || (ownerUsageCounts[editingOwner.id] ?? 0) > 0}
-                  onClick={() => setDeleteCandidate(editingOwner)}
-                >
-                  <Trash2 size={18} aria-hidden="true" />
-                  Скрыть
-                </Button>
-                <Button type="button" variant="secondary" onClick={() => setEditingOwnerId(null)}>
-                  <X size={18} aria-hidden="true" />
-                  Закрыть
-                </Button>
-              </div>
-              {(ownerUsageCounts[editingOwner.id] ?? 0) > 0 ? (
-                <p className="ui-empty-note">Скрыть можно только владельца без назначенных ПВЗ.</p>
-              ) : null}
-            </div>
-          ) : validationError ? (
-            <p className="ui-field-error">{validationError}</p>
+          ))}
+          {filteredOwners.length === 0 ? (
+            <p className="ui-empty-note">Владелец не найден. Создайте и назначьте его ниже.</p>
           ) : null}
-          <DrawerFooter>
-            <Button type="button" variant="secondary" onClick={close}>
-              Готово
-            </Button>
-          </DrawerFooter>
         </div>
-      )}
-
-      <AlertDialog
-        open={Boolean(deleteCandidate)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setDeleteCandidate(null);
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Скрыть владельца?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Владелец будет помечен как удаленный локально. Изменение останется в очереди
-              синхронизации и не затронет ПВЗ.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isSaving}>Отмена</AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={isSaving}
-              onClick={(event) => {
-                event.preventDefault();
-                void handleArchiveOwner();
-              }}
-            >
-              <Trash2 size={18} aria-hidden="true" />
-              Скрыть
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        {validationError ? <p className="ui-field-error">{validationError}</p> : null}
+        <DrawerFooter>
+          <Button type="submit" disabled={isSaving || !ownerSearch.trim()}>
+            <Plus size={18} aria-hidden="true" />
+            {isSaving
+              ? "Сохраняю..."
+              : exactSearchOwner
+                ? `Назначить ${exactSearchOwner.name}`
+                : "Создать и назначить"}
+          </Button>
+          <Button type="button" variant="secondary" onClick={close}>
+            Готово
+          </Button>
+        </DrawerFooter>
+      </form>
     </div>
   );
 }
@@ -637,7 +446,7 @@ function NoteForm({ close, item, runMutation }: Omit<ActionFormProps, "owners">)
     setIsSaving(true);
     const saved = await runMutation(
       () => updatePointLocal(item.point.id, { comment: nextComment }),
-      "Заметка сохранена локально, изменение добавлено в очередь синхронизации."
+      "Сохранено на устройстве."
     );
     setIsSaving(false);
 
@@ -678,7 +487,7 @@ function StatusForm({ close, item, runMutation }: Omit<ActionFormProps, "owners"
     setIsSaving(true);
     const saved = await runMutation(
       () => updatePointLocal(item.point.id, { status }),
-      "Статус сохранен локально, изменение добавлено в очередь синхронизации."
+      "Сохранено на устройстве."
     );
     setIsSaving(false);
 
@@ -708,11 +517,49 @@ function StatusForm({ close, item, runMutation }: Omit<ActionFormProps, "owners"
   );
 }
 
+function DetailsForm({
+  close,
+  item,
+  setAction
+}: Omit<ActionFormProps, "owners" | "runMutation"> & { setAction: (action: PointAction) => void }) {
+  return (
+    <div className="ui-form">
+      <div className="drawer-point-summary">
+        <span className="brand-pill">{getBrandLabel(item.point.brand)}</span>
+        <strong>{item.point.address}</strong>
+        <span>{item.owner?.name ?? "Без владельца"}</span>
+      </div>
+      <div className="drawer-action-grid" aria-label="Действия с ПВЗ">
+        <Button type="button" variant="secondary" onClick={() => setAction("edit")}>
+          <Pencil size={18} aria-hidden="true" />
+          Редактировать
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => setAction("note")}>
+          <Save size={18} aria-hidden="true" />
+          Заметка
+        </Button>
+        <Button type="button" variant="secondary" onClick={() => setAction("status")}>
+          <Check size={18} aria-hidden="true" />
+          Статус
+        </Button>
+        <Button type="button" variant="destructive" onClick={() => setAction("close")}>
+          <Archive size={18} aria-hidden="true" />
+          Закрыть ПВЗ
+        </Button>
+      </div>
+      <DrawerFooter>
+        <Button type="button" variant="secondary" onClick={close}>
+          Готово
+        </Button>
+      </DrawerFooter>
+    </div>
+  );
+}
+
 export function PointActionDialogs({
   action,
   item,
   owners,
-  ownerUsageCounts,
   onActionChange,
   runMutation
 }: PointActionDialogsProps) {
@@ -728,7 +575,7 @@ export function PointActionDialogs({
     setIsClosing(true);
     const saved = await runMutation(
       () => updatePointLocal(item.point.id, { status: "closed" }),
-      "ПВЗ закрыт локально, изменение добавлено в очередь синхронизации."
+      "Сохранено на устройстве."
     );
     setIsClosing(false);
 
@@ -751,9 +598,18 @@ export function PointActionDialogs({
           <DrawerHeader>
             <DrawerTitle>{drawerTitle(action)}</DrawerTitle>
             <DrawerDescription>
-              {item ? `${item.point.brand}, ${item.point.address}` : "ПВЗ не выбран"}
+              {item ? `${getBrandLabel(item.point.brand)}, ${item.point.address}` : "ПВЗ не выбран"}
             </DrawerDescription>
           </DrawerHeader>
+
+          {action === "details" && item ? (
+            <DetailsForm
+              key={`${item.point.id}-details`}
+              close={close}
+              item={item}
+              setAction={onActionChange}
+            />
+          ) : null}
 
           {action === "edit" && item ? (
             <EditPointForm
@@ -771,7 +627,6 @@ export function PointActionDialogs({
               close={close}
               item={item}
               owners={owners}
-              ownerUsageCounts={ownerUsageCounts}
               runMutation={runMutation}
             />
           ) : null}
@@ -808,8 +663,7 @@ export function PointActionDialogs({
           <AlertDialogHeader>
             <AlertDialogTitle>Закрыть ПВЗ?</AlertDialogTitle>
             <AlertDialogDescription>
-              ПВЗ будет помечен как закрытый локально. Изменение останется в очереди
-              синхронизации и может попасть в конфликт, если Google Sheets был изменен вручную.
+              ПВЗ будет закрыт на устройстве. Если есть конфликт, нужно будет выбрать версию.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

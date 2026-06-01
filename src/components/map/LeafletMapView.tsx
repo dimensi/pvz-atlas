@@ -3,6 +3,7 @@
 import { useEffect, useMemo } from "react";
 import { divIcon, latLngBounds, type LatLngExpression } from "leaflet";
 import { MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
+import { getBrandLabel } from "@/lib/brands";
 import type { PointStatus } from "@/lib/data-model/types";
 import type { MappablePointItem } from "@/lib/map/points";
 
@@ -15,7 +16,7 @@ interface LeafletMapViewProps {
 const DEFAULT_MAP_CENTER: LatLngExpression = [55.751244, 37.618423];
 const DEFAULT_ZOOM = 11;
 const SINGLE_MARKER_ZOOM = 15;
-const OSM_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
+const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const OSM_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
@@ -99,7 +100,7 @@ export default function LeafletMapView({
           icon={markerIcons[item.point.status]}
           key={item.point.id}
           position={markerPosition(item)}
-          title={`${item.point.brand}: ${item.point.address}`}
+          title={`${getBrandLabel(item.point.brand)}: ${item.point.address}`}
         />
       ))}
     </MapContainer>
