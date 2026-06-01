@@ -7,8 +7,8 @@ Build a mobile-first PWA for field collection and management of pickup points (P
 Core capabilities:
 - List PVZ grouped by owner.
 - Show PVZ without owner first.
-- Map mode with Leaflet and OpenStreetMap.
-- Open route to a PVZ through Yandex Maps deeplink.
+- Map mode with a low-cost map provider, currently Leaflet and OpenStreetMap.
+- Open route to a PVZ through an external maps deeplink.
 - Add a PVZ manually if it is missing.
 - Work offline on a phone using IndexedDB.
 - Sync safely with Google Sheets without overwriting manual edits.
@@ -22,8 +22,8 @@ Use:
 - IndexedDB via Dexie for client local storage.
 - Next.js route handlers for backend endpoints.
 - Google Sheets API only from the server side.
-- Leaflet with OpenStreetMap tiles for the in-app map.
-- Yandex Maps deeplinks for routing.
+- Leaflet with OpenStreetMap tiles for the in-app map unless the map provider is explicitly changed.
+- External maps deeplinks for routing.
 - Zod for runtime validation.
 - Vitest for unit tests where practical.
 - Playwright only if end-to-end tests become necessary.
@@ -34,6 +34,8 @@ Do not use:
 - Blind full-row overwrite sync.
 - Large backend frameworks unless explicitly requested.
 - Redis/Postgres in the MVP unless a task explicitly upgrades storage.
+- Yandex Maps JS API, Yandex Geocoder, or any paid/high-quota map/geocoder API unless explicitly approved for that task.
+- Svelte-only UI libraries in this React/Next.js project.
 
 ## Repository layout target
 
@@ -56,16 +58,45 @@ src/
     points/
     owners/
     sync/
+    ui/
   lib/
+    api/
     data-model/
     indexeddb/
     sync/
     sheets/
     map/
-    yandex/
     validation/
   styles/
 ```
+
+## Codex review-agent workflow
+
+Codex subagents are not assumed to run automatically. For every non-trivial task, the working agent must intentionally use the relevant read-only review agents from `.codex/agents/` and report their findings.
+
+Use `.codex/prompts/task-start-checklist.md` at the start of non-trivial work.
+
+Default workflow:
+1. Read this `AGENTS.md`.
+2. Use `code_mapper` before implementation, except for tiny docs or typo-only tasks.
+3. Summarize the mapper findings before editing.
+4. Create or update an ExecPlan for architecture, sync, data model, UI migration, or map changes.
+5. Implement the smallest safe slice.
+6. Run targeted tests, typecheck, and lint where practical.
+7. Use the matching area review agents.
+8. Use `test_hardening_reviewer` before finishing non-docs work.
+9. Fix blocker findings before finalizing.
+10. Final response must include changed files, commands run, unresolved risks, and reviewer findings.
+
+Review agent routing:
+- `code_mapper`: use before non-trivial implementation to map entry points, flows, risks, and tests.
+- `mobile_ui_reviewer`: use for UI, components, styles, forms, drawers, dialogs, toasts, navigation, and map sheets.
+- `local_first_sync_reviewer`: use for IndexedDB, Change queue, sync engine, API clients, API routes, Sheets writes, conflict handling, and local mutations.
+- `map_cost_reviewer`: use for maps, geolocation, coordinates, geocoding, tiles, routing, nearby filters, and route links.
+- `sheets_data_reviewer`: use for Sheets adapter, import/export, owners, contact fields, logs, diagnostics, env vars, and debug routes.
+- `test_hardening_reviewer`: use before finishing non-docs work.
+
+If a task spans multiple areas, use multiple review agents. If a reviewer reports a data-loss, local-first, cost, or production-UX blocker, fix it before finalizing.
 
 ## Data model rules
 
@@ -99,7 +130,7 @@ Expected modules:
 - `import-api.ts` — import preview/apply requests.
 
 UI components should not call `fetch` directly for sync or data mutations.
-Use typed API clients for explicit server actions such as geocoding/import preview.
+Use typed API clients for explicit server actions such as import preview.
 Prefer calling domain functions from `src/lib/sync`, `src/lib/indexeddb`, or typed API clients.
 
 Normal data flow is UI -> IndexedDB -> changes queue -> sync engine -> API clients -> route handlers -> adapters:
@@ -151,12 +182,12 @@ Protect these columns conceptually:
 
 The backend must validate rows read from Sheets and report malformed rows instead of crashing.
 
-## Mobile-first UI rules
+## UI component rules
 
 Design for phone usage first:
 - Bottom navigation.
 - Large tap targets.
-- Bottom sheets for map marker details.
+- Bottom sheets/drawers for primary mobile edit flows.
 - Fast filters: no owner, nearby, brand, status.
 - Offline and sync status visible but not noisy.
 - Actions should be possible with one hand while walking.
@@ -167,12 +198,35 @@ Primary tabs:
 - Add
 - Sync
 
+Production UI must not use browser-native:
+- `alert`
+- `confirm`
+- `prompt`
+
+Use mature accessible React primitives for:
+- buttons
+- inputs
+- textareas
+- selects
+- dialogs
+- drawers/bottom sheets
+- confirmation dialogs
+- badges
+- cards
+- toasts
+
+For the React/Next.js app, prefer shadcn/ui-style components, Radix UI primitives, and Vaul-style drawers where appropriate. Do not add Svelte-only packages such as bits-ui.
+
+Destructive actions require explicit confirmation UI. Non-blocking feedback should use toasts or inline status messages. UI edit flows must call local domain actions and keep the IndexedDB/Change-queue path intact.
+
 ## Map rules
 
-Use Leaflet with OpenStreetMap tiles for displaying points.
-Use Yandex Maps deeplinks for routes instead of implementing routing in-app.
+Use Leaflet with OpenStreetMap tiles for displaying points unless a task explicitly changes the map provider.
+Use external maps deeplinks for routes instead of implementing routing in-app.
 Store `lat` and `lon` in the data model; never geocode on render.
 The MVP does not geocode addresses automatically. Coordinates come from manual entry, CSV/JSON import, or manual Google Sheets edits.
+Do not introduce Yandex Maps JS API, Yandex Geocoder, or another paid/high-quota map/geocoder API without explicit approval.
+Nearby filtering should run locally when possible and should not send the operator location to a server unless a task explicitly requires it.
 
 ## Import rules
 
@@ -187,12 +241,13 @@ Import pipeline:
 
 Repeated imports must be idempotent.
 
-## Privacy and safety rules
+## Data handling rules
 
-Treat owner names, phones, Telegram handles, and free-form notes as sensitive personal data.
+Treat owner names, phones, Telegram handles, and free-form notes as operational data that should not be exposed casually.
 Do not expose owner/contact data in public pages.
-Do not log secrets or personal contacts.
+Do not log secrets or owner contacts.
 Add `.env.example` but never commit `.env.local`.
+Repository files must not include real sheet IDs, runtime keys, owner contacts, or field notes.
 
 ## Engineering conventions
 
@@ -227,9 +282,11 @@ A task is done only when:
 - Existing behavior is not broken.
 - Sync behavior is described for affected data paths.
 - Any new environment variables are documented in `.env.example`.
+- Required review agents were used or the task explains why they were not needed.
+- Any blocker findings from review agents are fixed.
 
 ## ExecPlans
 
-For complex features, sync changes, data model changes, or architecture refactors, create an ExecPlan using `.agent/PLANS.md` before editing code. Keep the plan updated while working.
+For complex features, sync changes, data model changes, UI architecture changes, map changes, or refactors, create an ExecPlan using `.agent/PLANS.md` before editing code. Keep the plan updated while working.
 
 For large features, create a dedicated git worktree under `.worktrees/` at the repository root and do the implementation there. Do not create sibling worktrees outside the project directory unless explicitly requested.
