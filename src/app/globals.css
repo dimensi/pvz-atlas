@@ -123,6 +123,24 @@ select {
   line-height: 1.2;
 }
 
+.brand-lockup {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.brand-logo {
+  width: 44px;
+  height: 44px;
+  flex: 0 0 44px;
+  object-fit: contain;
+}
+
+.brand-copy {
+  min-width: 0;
+}
+
 .eyebrow {
   margin: 0 0 2px;
   color: var(--muted);
@@ -1000,5 +1018,33 @@ select {
 
   .point-actions {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 380px) {
+  .top-bar {
+    gap: 10px;
+    padding-right: 12px;
+    padding-left: 12px;
+  }
+
+  .brand-lockup {
+    gap: 8px;
+  }
+
+  .brand-logo {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+  }
+
+  .top-bar h1 {
+    font-size: 18px;
+  }
+
+  .status-pill {
+    min-height: 32px;
+    padding: 0 9px;
+    font-size: 12px;
   }
 }
