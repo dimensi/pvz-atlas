@@ -177,6 +177,24 @@ export default function PointsListClient() {
     () => state.owners.filter((owner) => owner.deletedAt === null),
     [state.owners]
   );
+  const ownerUsageCounts = useMemo(
+    () =>
+      state.points.reduce<Record<string, number>>((counts, point) => {
+        if (point.deletedAt === null && point.ownerId) {
+          counts[point.ownerId] = (counts[point.ownerId] ?? 0) + 1;
+        }
+
+        return counts;
+      }, {}),
+    [state.points]
+  );
+  const dialogItem = useMemo(() => {
+    if (!activeItem) {
+      return null;
+    }
+
+    return items.find((item) => item.point.id === activeItem.point.id) ?? activeItem;
+  }, [activeItem, items]);
   const globalSyncState = getGlobalSyncState(
     state.pendingChanges,
     state.conflicts,
@@ -451,8 +469,9 @@ export default function PointsListClient() {
       )}
       <PointActionDialogs
         action={activeAction}
-        item={activeItem}
+        item={dialogItem}
         owners={availableOwners}
+        ownerUsageCounts={ownerUsageCounts}
         onActionChange={(nextAction) => {
           setActiveAction(nextAction);
           if (nextAction === null) {

@@ -364,13 +364,71 @@ select {
 
 .owner-option span {
   min-width: 0;
+  display: grid;
+  gap: 2px;
   overflow-wrap: anywhere;
+}
+
+.owner-option small {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.owner-option-icon {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  flex: 0 0 18px;
+  align-items: center;
+  justify-content: center;
 }
 
 .owner-option-active {
   border-color: var(--accent);
   background: #e5f7f4;
   color: var(--accent-strong);
+}
+
+.owner-dialog-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  padding: 0 4px;
+}
+
+.owner-dialog-tabs button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--muted);
+  font-weight: 900;
+}
+
+.owner-dialog-tabs .owner-dialog-tab-active {
+  border-color: var(--accent);
+  background: #e5f7f4;
+  color: var(--accent-strong);
+}
+
+.owner-editor {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+
+.owner-editor-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
 }
 
 .form {

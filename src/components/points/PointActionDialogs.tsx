@@ -1,9 +1,9 @@
 "use client";
 
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Archive, Check, Plus, Save, Search, X } from "lucide-react";
+import { Archive, Check, Pencil, Plus, Save, Search, Trash2, Users, X } from "lucide-react";
 import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
-import { createOwnerLocal, updatePointLocal } from "@/lib/sync/local-actions";
+import { createOwnerLocal, updateOwnerLocal, updatePointLocal } from "@/lib/sync/local-actions";
 import { POINT_STATUS_LABELS } from "@/lib/points/list";
 import {
   AlertDialog,
@@ -46,6 +46,7 @@ interface PointActionDialogsProps {
   action: PointAction | null;
   item: PointActionItem | null;
   owners: Owner[];
+  ownerUsageCounts?: Record<string, number>;
   onActionChange: (action: PointAction | null) => void;
   runMutation: (mutation: () => Promise<unknown>, successMessage: string) => Promise<boolean>;
 }
@@ -53,6 +54,7 @@ interface PointActionDialogsProps {
 interface ActionFormProps {
   item: PointActionItem;
   owners: Owner[];
+  ownerUsageCounts?: Record<string, number>;
   close: () => void;
   runMutation: PointActionDialogsProps["runMutation"];
 }
@@ -252,10 +254,16 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
   );
 }
 
-function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
+function OwnerForm({ close, item, owners, ownerUsageCounts = {}, runMutation }: ActionFormProps) {
+  const [mode, setMode] = useState<"assign" | "manage">("assign");
   const [ownerSearch, setOwnerSearch] = useState("");
-  const [selectedOwnerId, setSelectedOwnerId] = useState(item.point.ownerId ?? OWNER_NONE_VALUE);
-  const [newOwnerName, setNewOwnerName] = useState("");
+  const [editingOwnerId, setEditingOwnerId] = useState<string | null>(null);
+  const [ownerName, setOwnerName] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
+  const [ownerTelegram, setOwnerTelegram] = useState("");
+  const [ownerComment, setOwnerComment] = useState("");
+  const [deleteCandidate, setDeleteCandidate] = useState<Owner | null>(null);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const sortedOwners = useMemo(() => sortOwners(owners), [owners]);
   const filteredOwners = useMemo(() => {
@@ -266,36 +274,167 @@ function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
 
     return sortedOwners.filter((owner) => normalize(owner.name).includes(query));
   }, [ownerSearch, sortedOwners]);
+  const exactSearchOwner = useMemo(() => {
+    const query = normalize(ownerSearch);
+    return query ? sortedOwners.find((owner) => normalize(owner.name) === query) ?? null : null;
+  }, [ownerSearch, sortedOwners]);
+  const editingOwner = editingOwnerId
+    ? sortedOwners.find((owner) => owner.id === editingOwnerId) ?? null
+    : null;
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const trimmedNewOwnerName = newOwnerName.trim();
-    const nextOwnerId = selectedOwnerId === OWNER_NONE_VALUE ? null : selectedOwnerId;
+  const startEditingOwner = (owner: Owner) => {
+    setValidationError(null);
+    setEditingOwnerId(owner.id);
+    setOwnerName(owner.name);
+    setOwnerPhone(owner.phone ?? "");
+    setOwnerTelegram(owner.telegram ?? "");
+    setOwnerComment(owner.comment ?? "");
+  };
 
-    if (!trimmedNewOwnerName && nextOwnerId === item.point.ownerId) {
-      close();
+  const assignOwner = async (ownerId: string | null) => {
+    if (ownerId === item.point.ownerId) {
       return;
     }
 
+    setValidationError(null);
+    setIsSaving(true);
+    const saved = await runMutation(
+      () => updatePointLocal(item.point.id, { ownerId }),
+      "Владелец назначен локально, изменение добавлено в очередь синхронизации."
+    );
+    setIsSaving(false);
+
+    return saved;
+  };
+
+  const handleCreateAndAssign = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const name = ownerSearch.trim();
+    if (!name) {
+      setValidationError("Введите имя нового владельца.");
+      return;
+    }
+
+    if (exactSearchOwner) {
+      await assignOwner(exactSearchOwner.id);
+      return;
+    }
+
+    setValidationError(null);
     setIsSaving(true);
     const saved = await runMutation(async () => {
-      if (trimmedNewOwnerName) {
-        const owner = await createOwnerLocal({ name: trimmedNewOwnerName });
-        await updatePointLocal(item.point.id, { ownerId: owner.id });
-        return;
-      }
+      const owner = await createOwnerLocal({ name });
+      await updatePointLocal(item.point.id, { ownerId: owner.id });
+    }, "Владелец создан и назначен локально, изменение добавлено в очередь синхронизации.");
+    setIsSaving(false);
 
-      await updatePointLocal(item.point.id, { ownerId: nextOwnerId });
-    }, "Владелец сохранен локально, изменение добавлено в очередь синхронизации.");
+    return saved;
+  };
+
+  const handleSaveOwner = async () => {
+    if (!editingOwner) {
+      return;
+    }
+
+    const nextName = ownerName.trim();
+    const nextPhone = ownerPhone.trim() || null;
+    const nextTelegram = ownerTelegram.trim() || null;
+    const nextComment = ownerComment.trim() || null;
+
+    if (!nextName) {
+      setValidationError("Имя владельца обязательно.");
+      return;
+    }
+
+    const patch: Partial<Pick<Owner, "name" | "phone" | "telegram" | "comment">> = {};
+    if (nextName !== editingOwner.name) {
+      patch.name = nextName;
+    }
+    if (nextPhone !== editingOwner.phone) {
+      patch.phone = nextPhone;
+    }
+    if (nextTelegram !== editingOwner.telegram) {
+      patch.telegram = nextTelegram;
+    }
+    if (nextComment !== editingOwner.comment) {
+      patch.comment = nextComment;
+    }
+
+    if (Object.keys(patch).length === 0) {
+      setEditingOwnerId(null);
+      return;
+    }
+
+    setValidationError(null);
+    setIsSaving(true);
+    const saved = await runMutation(
+      () => updateOwnerLocal(editingOwner.id, patch),
+      "Владелец сохранен локально, изменение добавлено в очередь синхронизации."
+    );
     setIsSaving(false);
 
     if (saved) {
-      close();
+      setEditingOwnerId(null);
+    }
+  };
+
+  const handleArchiveOwner = async () => {
+    if (!deleteCandidate) {
+      return;
+    }
+
+    const usageCount = ownerUsageCounts[deleteCandidate.id] ?? 0;
+    if (usageCount > 0) {
+      setDeleteCandidate(null);
+      setValidationError("Сначала снимите владельца со всех ПВЗ.");
+      return;
+    }
+
+    setValidationError(null);
+    setIsSaving(true);
+    const saved = await runMutation(
+      () => updateOwnerLocal(deleteCandidate.id, { deletedAt: new Date().toISOString() }),
+      "Владелец скрыт локально, изменение добавлено в очередь синхронизации."
+    );
+    setIsSaving(false);
+
+    if (saved) {
+      setDeleteCandidate(null);
+      setEditingOwnerId(null);
     }
   };
 
   return (
-    <form className="ui-form" onSubmit={handleSubmit}>
+    <div className="ui-form">
+      <div className="owner-dialog-tabs" role="tablist" aria-label="Режим владельцев">
+        <button
+          className={mode === "assign" ? "owner-dialog-tab-active" : ""}
+          type="button"
+          role="tab"
+          aria-selected={mode === "assign"}
+          onClick={() => {
+            setMode("assign");
+            setValidationError(null);
+          }}
+        >
+          <Check size={16} aria-hidden="true" />
+          Назначить
+        </button>
+        <button
+          className={mode === "manage" ? "owner-dialog-tab-active" : ""}
+          type="button"
+          role="tab"
+          aria-selected={mode === "manage"}
+          onClick={() => {
+            setMode("manage");
+            setValidationError(null);
+          }}
+        >
+          <Users size={16} aria-hidden="true" />
+          Управление
+        </button>
+      </div>
+
       <Field id="owner-search" label="Поиск владельца">
         <div className="ui-input-with-icon">
           <Search size={18} aria-hidden="true" />
@@ -307,67 +446,179 @@ function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
           />
         </div>
       </Field>
-      <div className="owner-picker" role="radiogroup" aria-label="Владелец ПВЗ">
-        <button
-          className={`owner-option ${selectedOwnerId === OWNER_NONE_VALUE ? "owner-option-active" : ""}`}
-          type="button"
-          role="radio"
-          aria-checked={selectedOwnerId === OWNER_NONE_VALUE}
-          onClick={() => setSelectedOwnerId(OWNER_NONE_VALUE)}
-        >
-          <span>Без владельца</span>
-          {selectedOwnerId === OWNER_NONE_VALUE ? <Check size={18} aria-hidden="true" /> : null}
-        </button>
-        {filteredOwners.map((owner) => (
-          <button
-            className={`owner-option ${selectedOwnerId === owner.id ? "owner-option-active" : ""}`}
-            key={owner.id}
-            type="button"
-            role="radio"
-            aria-checked={selectedOwnerId === owner.id}
-            onClick={() => setSelectedOwnerId(owner.id)}
-          >
-            <span>{owner.name}</span>
-            {selectedOwnerId === owner.id ? <Check size={18} aria-hidden="true" /> : null}
-          </button>
-        ))}
-        {filteredOwners.length === 0 ? (
-          <p className="ui-empty-note">Владелец не найден. Создайте нового ниже.</p>
-        ) : null}
-      </div>
-      <Field id="new-owner-name" label="Новый владелец">
-        <Input
-          id="new-owner-name"
-          placeholder="Создать и назначить"
-          value={newOwnerName}
-          onChange={(event) => setNewOwnerName(event.target.value)}
-        />
-      </Field>
-      <DrawerFooter>
-        <Button type="submit" disabled={isSaving}>
-          {newOwnerName.trim() ? (
-            <Plus size={18} aria-hidden="true" />
-          ) : (
-            <Save size={18} aria-hidden="true" />
-          )}
-          {isSaving ? "Сохраняю..." : "Сохранить"}
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          onClick={() => {
-            setSelectedOwnerId(OWNER_NONE_VALUE);
-            setNewOwnerName("");
-          }}
-        >
-          <X size={18} aria-hidden="true" />
-          Очистить владельца
-        </Button>
-        <Button type="button" variant="secondary" onClick={close}>
-          Отмена
-        </Button>
-      </DrawerFooter>
-    </form>
+
+      {mode === "assign" ? (
+        <form className="ui-form" onSubmit={handleCreateAndAssign}>
+          <div className="owner-picker" aria-label="Владелец ПВЗ">
+            <button
+              className={`owner-option ${item.point.ownerId === null ? "owner-option-active" : ""}`}
+              type="button"
+              disabled={isSaving}
+              onClick={() => void assignOwner(null)}
+            >
+              <span>Без владельца</span>
+              <span className="owner-option-icon">
+                {item.point.ownerId === null ? <Check size={18} aria-hidden="true" /> : null}
+              </span>
+            </button>
+            {filteredOwners.map((owner) => (
+              <button
+                className={`owner-option ${item.point.ownerId === owner.id ? "owner-option-active" : ""}`}
+                key={owner.id}
+                type="button"
+                disabled={isSaving}
+                onClick={() => void assignOwner(owner.id)}
+              >
+                <span>{owner.name}</span>
+                <span className="owner-option-icon">
+                  {item.point.ownerId === owner.id ? <Check size={18} aria-hidden="true" /> : null}
+                </span>
+              </button>
+            ))}
+            {filteredOwners.length === 0 ? (
+              <p className="ui-empty-note">Владелец не найден. Создайте и назначьте его ниже.</p>
+            ) : null}
+          </div>
+          {validationError ? <p className="ui-field-error">{validationError}</p> : null}
+          <DrawerFooter>
+            <Button type="submit" disabled={isSaving || !ownerSearch.trim()}>
+              <Plus size={18} aria-hidden="true" />
+              {isSaving
+                ? "Сохраняю..."
+                : exactSearchOwner
+                  ? `Назначить ${exactSearchOwner.name}`
+                  : "Создать и назначить"}
+            </Button>
+            <Button type="button" variant="secondary" onClick={close}>
+              Готово
+            </Button>
+          </DrawerFooter>
+        </form>
+      ) : (
+        <div className="ui-form">
+          <div className="owner-picker" aria-label="Управление владельцами">
+            {filteredOwners.map((owner) => {
+              const usageCount = ownerUsageCounts[owner.id] ?? 0;
+
+              return (
+                <button
+                  className={`owner-option ${editingOwnerId === owner.id ? "owner-option-active" : ""}`}
+                  key={owner.id}
+                  type="button"
+                  aria-label={`${owner.name}, ${usageCount > 0 ? `${usageCount} ПВЗ` : "без ПВЗ"}`}
+                  disabled={isSaving}
+                  onClick={() => startEditingOwner(owner)}
+                >
+                  <span>
+                    {owner.name}
+                    <small>{usageCount > 0 ? `${usageCount} ПВЗ` : "Без ПВЗ"}</small>
+                  </span>
+                  <Pencil size={18} aria-hidden="true" />
+                </button>
+              );
+            })}
+            {filteredOwners.length === 0 ? (
+              <p className="ui-empty-note">Владельцы не найдены.</p>
+            ) : null}
+          </div>
+
+          {editingOwner ? (
+            <div className="owner-editor">
+              <Field id="owner-manage-name" label="Имя владельца" error={validationError}>
+                <Input
+                  id="owner-manage-name"
+                  value={ownerName}
+                  onChange={(event) => setOwnerName(event.target.value)}
+                />
+              </Field>
+              <Field id="owner-manage-phone" label="Телефон">
+                <Input
+                  id="owner-manage-phone"
+                  value={ownerPhone}
+                  onChange={(event) => setOwnerPhone(event.target.value)}
+                />
+              </Field>
+              <Field id="owner-manage-telegram" label="Telegram">
+                <Input
+                  id="owner-manage-telegram"
+                  value={ownerTelegram}
+                  onChange={(event) => setOwnerTelegram(event.target.value)}
+                />
+              </Field>
+              <Field id="owner-manage-comment" label="Комментарий">
+                <Textarea
+                  id="owner-manage-comment"
+                  value={ownerComment}
+                  onChange={(event) => setOwnerComment(event.target.value)}
+                />
+              </Field>
+              <div className="owner-editor-actions">
+                <Button type="button" disabled={isSaving} onClick={() => void handleSaveOwner()}>
+                  <Save size={18} aria-hidden="true" />
+                  {isSaving ? "Сохраняю..." : "Сохранить"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={isSaving || (ownerUsageCounts[editingOwner.id] ?? 0) > 0}
+                  onClick={() => setDeleteCandidate(editingOwner)}
+                >
+                  <Trash2 size={18} aria-hidden="true" />
+                  Скрыть
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => setEditingOwnerId(null)}>
+                  <X size={18} aria-hidden="true" />
+                  Закрыть
+                </Button>
+              </div>
+              {(ownerUsageCounts[editingOwner.id] ?? 0) > 0 ? (
+                <p className="ui-empty-note">Скрыть можно только владельца без назначенных ПВЗ.</p>
+              ) : null}
+            </div>
+          ) : validationError ? (
+            <p className="ui-field-error">{validationError}</p>
+          ) : null}
+          <DrawerFooter>
+            <Button type="button" variant="secondary" onClick={close}>
+              Готово
+            </Button>
+          </DrawerFooter>
+        </div>
+      )}
+
+      <AlertDialog
+        open={Boolean(deleteCandidate)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteCandidate(null);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Скрыть владельца?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Владелец будет помечен как удаленный локально. Изменение останется в очереди
+              синхронизации и не затронет ПВЗ.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isSaving}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={isSaving}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleArchiveOwner();
+              }}
+            >
+              <Trash2 size={18} aria-hidden="true" />
+              Скрыть
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
   );
 }
 
@@ -461,6 +712,7 @@ export function PointActionDialogs({
   action,
   item,
   owners,
+  ownerUsageCounts,
   onActionChange,
   runMutation
 }: PointActionDialogsProps) {
@@ -519,6 +771,7 @@ export function PointActionDialogs({
               close={close}
               item={item}
               owners={owners}
+              ownerUsageCounts={ownerUsageCounts}
               runMutation={runMutation}
             />
           ) : null}
