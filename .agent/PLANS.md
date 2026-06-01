@@ -84,3 +84,41 @@ Remove the new `src/lib/sheets/schema.ts` module and its tests. Existing app cod
 - [x] Add Sheets schema and row codec module.
 - [x] Add parser and serializer tests.
 - [x] Run lint, typecheck, tests, and build.
+
+---
+
+## IndexedDB Local-First Sync Engine
+
+### Goal
+Make IndexedDB the client-side source of truth for points, owners, and visits, and queue local mutations as patch-based `Change` records for later Google Sheets sync.
+
+### Current repo state
+The repo already has strict sync entity types in `src/lib/data-model/types.ts`, Zod schemas in `src/lib/data-model/schemas.ts`, server sync contract stubs in `src/lib/sync/contracts.ts`, and a Dexie database shell in `src/lib/indexeddb/db.ts`. App pages currently describe local-first behavior but do not call Google Sheets directly and do not yet read/write IndexedDB.
+
+### Data and API impact
+Affected client tables are `points`, `owners`, `visits`, `changes`, `conflicts`, and a new `meta` table. The existing `Change` shape remains compatible with Sheets mapping: `entityName`, `operation`, `entityId`, `patch`, `baseVersion`, `syncedAt`, and standard sync metadata. No server route changes are required for this step.
+
+### Approach
+Add pure helpers for building changes and applying patches, then add IndexedDB repository functions for points, owners, visits, and change queue operations. Mutating repository functions will use Dexie transactions to write the local entity and enqueue the matching `Change` in the same transaction where Dexie supports it.
+
+### Conflict and offline behavior
+Offline mutations commit to IndexedDB first and remain visible to UI consumers immediately. Creates enqueue `create` changes with the full created record in `patch` and `baseVersion: 0`. Updates enqueue only changed fields plus metadata needed by the target record, preserving `baseVersion` from the pre-mutation record. Push later sends pending unsynced changes; the server must compare each `baseVersion` with the remote version, merge independent field edits, and emit conflicts when the same field was changed manually in Google Sheets.
+
+### UI behavior
+No app page is wired to live IndexedDB reads in this prompt. The repository functions provide the local-first surface needed by future mobile UI components; sync queue helpers can power the Sync tab's pending count and conflict indicators.
+
+### Tests
+Add Vitest coverage for pure change creation and patch logic: create change content, update patch filtering, no-op patch rejection, local entity patch metadata, and synced change marking.
+
+### Risks
+The main risk is accidentally storing full-row updates instead of patches. Keep patch creation pure and tested, and keep repository mutation helpers small. Browser-only Dexie code must remain behind `"use client"` modules so server routes do not import IndexedDB.
+
+### Rollback
+Remove the new IndexedDB repository and sync helper modules, revert the Dexie schema version addition, and leave existing data-model and Sheets modules intact.
+
+### Progress
+- [x] Inspect existing model, sync contract, Dexie shell, and UI pages.
+- [x] Add pure change and patch helpers.
+- [x] Add Dexie tables and repository functions.
+- [x] Add unit tests for change creation and patch logic.
+- [x] Run lint, typecheck, tests, and build.
