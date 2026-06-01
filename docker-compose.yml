@@ -1,0 +1,18 @@
+services:
+  pvz-atlas:
+    build: .
+    container_name: pvz-atlas
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      HOSTNAME: 0.0.0.0
+      PORT: 3000
+      GOOGLE_SHEETS_SPREADSHEET_ID: ${GOOGLE_SHEETS_SPREADSHEET_ID:?missing GOOGLE_SHEETS_SPREADSHEET_ID}
+      GOOGLE_SERVICE_ACCOUNT_EMAIL: ${GOOGLE_SERVICE_ACCOUNT_EMAIL:?missing GOOGLE_SERVICE_ACCOUNT_EMAIL}
+      GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY: ${GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY:?missing GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY}
+    networks:
+      - web
+
+networks:
+  web:
+    external: true
