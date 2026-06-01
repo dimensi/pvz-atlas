@@ -14,3 +14,7 @@ export function buildYandexRouteUrl(point: {
 
   return `https://yandex.ru/maps/?${params.toString()}`;
 }
+
+export function getYandexRouteUrl(lat: number, lon: number): string {
+  return buildYandexRouteUrl({ lat, lon });
+}

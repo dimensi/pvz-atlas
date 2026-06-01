@@ -61,10 +61,22 @@ const buildWriteSet = (
   };
 };
 
+const hasConflictForChange = (
+  conflicts: ReturnType<typeof applyChangesToSnapshot>["conflicts"],
+  change: Change
+): boolean =>
+  conflicts.some(
+    (conflict) =>
+      conflict.entityName === change.entityName &&
+      conflict.entityId === change.entityId &&
+      conflict.baseVersion === change.baseVersion
+  );
+
 export async function POST(request: Request) {
   try {
     const payload = await parseJsonBody(request, pushRequestSchema);
     const snapshot = await getSheetsSnapshot();
+    const serverTime = new Date().toISOString();
     const applied = applyChangesToSnapshot(
       {
         points: snapshot.points,
@@ -74,7 +86,7 @@ export async function POST(request: Request) {
       },
       payload.changes,
       {
-        clock: () => new Date().toISOString(),
+        clock: () => serverTime,
         idFactory: () => crypto.randomUUID()
       }
     );
@@ -85,22 +97,31 @@ export async function POST(request: Request) {
       visits: applied.snapshot.visits,
       conflicts: applied.snapshot.conflicts
     };
-
-    await writeSheetsChanges(
+    const writeSet = buildWriteSet(
       snapshot,
-      buildWriteSet(
-        snapshot,
-        nextSnapshot,
-        applied.appliedChanges,
-        applied.appliedChanges,
-        applied.conflicts
-      )
+      nextSnapshot,
+      applied.appliedChanges,
+      applied.appliedChanges,
+      applied.conflicts
     );
+
+    await writeSheetsChanges(snapshot, writeSet);
     invalidateSheetsSnapshot();
 
+    const appliedIds = new Set(applied.acceptedChangeIds);
     const response = pushResponseSchema.parse({
-      acceptedChangeIds: applied.acceptedChangeIds,
+      serverTime,
+      applied: applied.acceptedChangeIds,
+      rejected: payload.changes
+        .filter((change) => !appliedIds.has(change.id))
+        .map((change) => ({
+          changeId: change.id,
+          reason: hasConflictForChange(applied.conflicts, change) ? "conflict" : "not_applied"
+        })),
       conflicts: applied.conflicts,
+      points: writeSet.points,
+      owners: writeSet.owners,
+      visits: writeSet.visits,
       warnings: [
         ...snapshot.diagnostics.map(
           (diagnostic) =>

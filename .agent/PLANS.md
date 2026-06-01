@@ -184,3 +184,185 @@ Verification results:
 - `npm run typecheck`: passed
 - `npm test`: passed, 5 files and 21 tests
 - `npm run build`: passed
+
+---
+
+## Mobile PVZ List and Owner Grouping UI
+
+### Goal
+Create a mobile-first list screen for field work: points without owners first, then owner groups, with fast search/filtering, point actions, local IndexedDB mutations, and visible sync state.
+
+### Current repo state
+`src/app/points/page.tsx` is currently a static placeholder. The data model is defined in `src/lib/data-model/types.ts`. Local-first mutation helpers already exist in `src/lib/indexeddb/repositories.ts`, including point creation/update, owner creation, owner assignment, and visit creation. Yandex route deeplinks are available in `src/lib/yandex/deeplinks.ts`. Global mobile shell and base CSS live in `src/app/layout.tsx` and `src/app/globals.css`.
+
+### Data and API impact
+Affected client entities are `Point`, `Owner`, `Visit`, `Change`, and `Conflict`. No API endpoints, Google Sheets columns, or environment variables change. Mutations remain client-side IndexedDB writes plus queued `Change` records through existing repository functions.
+
+### Approach
+Add pure list helpers for grouping and filtering points. Add a client list component that loads IndexedDB state, renders filters/search/grouped cards, and calls repository mutation functions for owner assignment, owner creation, status edits, comments, and visit marking. Replace the placeholder points page with the client component. Extend CSS for mobile list controls and cards. Add Vitest coverage for the pure grouping/filtering helpers.
+
+### Conflict and offline behavior
+All point actions write to IndexedDB first and enqueue changes through existing repository functions. Owner assignment, status, comment, created owners, and visits remain pending until sync push. Push will compare `baseVersion` with Google Sheets remote versions and create conflict records for conflicting manual edits. The list shows offline, pending, conflict, and synced states based on navigator connectivity plus local `changes` and `conflicts` tables.
+
+### UI behavior
+The page shows a compact search field, filter chips for no owner, brand, and status, then grouped point cards. Empty states guide the operator to add/import/sync data without exposing sensitive owner contacts. Cards expose route, owner assignment, owner creation, visited, status, and comment actions with phone-sized tap targets. Loading and error states keep the screen usable on narrow phones.
+
+### Tests
+Add unit tests for no-owner-first grouping, owner group counts, search across address/owner/brand/status/comment, and fast filters.
+
+### Risks
+Dexie is browser-only, so IndexedDB access must remain inside a client component. Browser prompts are simple but limited; this keeps scope small for MVP while preserving local-first mutation semantics.
+
+### Rollback
+Revert the new list helper/component/test files and restore `src/app/points/page.tsx` to the static placeholder. No data migrations or backend changes are required.
+
+### Progress
+- [x] Inspect prompt, project rules, mobile UI skill, data model, repositories, and current pages.
+- [x] Add pure grouping/filtering helpers and tests.
+- [x] Add mobile client list UI wired to IndexedDB repositories.
+- [x] Replace static points page and extend mobile CSS.
+- [x] Run lint, typecheck, tests, and build.
+
+Verification results:
+- `npm run lint`: passed
+- `npm run typecheck`: passed
+- `npm test`: passed, 6 files and 25 tests
+- `npm run build`: passed
+- Browser check: opened `http://localhost:3001/points`, verified empty state renders and search/no-owner filter controls respond.
+
+---
+
+## Yandex Map Mobile UI
+
+### Goal
+Create a mobile-first map screen that reads PVZ points from local IndexedDB, renders coordinate-backed points on Yandex Maps, handles points without coordinates separately, and opens Yandex Maps route deeplinks from marker details.
+
+### Current repo state
+`src/app/map/page.tsx` is a static placeholder. IndexedDB tables and repository mutation helpers already exist in `src/lib/indexeddb`. The points list client already demonstrates browser-only Dexie reads, local sync state, status labels, filters, and route links. `src/lib/yandex/deeplinks.ts` already builds web fallback route URLs and has a Vitest test.
+
+### Data and API impact
+Affected client entities are `Point`, `Owner`, `Change`, and `Conflict` for local display and sync-state badges. No server endpoints, Google Sheets adapters, sheet columns, sync contracts, or production dependencies are changed. Yandex Maps API key remains an environment variable consumed by client-side script loading.
+
+### Approach
+Add pure map helpers for coordinate filtering, marker filtering, nearby filtering, status/brand options, and script URL construction. Add a client map component that loads local IndexedDB state, lazy-loads the Yandex Maps script, initializes markers, opens a bottom sheet on marker tap, and exposes route deeplinks. Replace the map placeholder with the client component and extend the existing mobile CSS.
+
+### Conflict and Offline Behavior
+This task does not mutate PVZ data. Offline behavior is read-only: points already in IndexedDB remain visible, pending changes and conflicts are reflected from local tables, and route links remain available for points with coordinates. Future sync still uses the existing pull/push/pull flow and conflict-aware server application for any queued mutations created elsewhere.
+
+### UI Behavior
+The map screen shows a compact header, local sync badge, filter toolbar for all/no owner/nearby/brand/status, a map load state, script failure state, empty coordinate state, a count of points without coordinates, and a mobile bottom sheet with brand, address, city, owner/status/comment, and route action after marker tap.
+
+### Tests
+Add or update Vitest coverage for Yandex deeplink helpers and new marker filtering helpers, including no-owner, brand, status, nearby, coordinate separation, and malformed coordinate exclusion.
+
+### Risks
+The main risks are browser-only Yandex globals and script load failure. Mitigate by keeping all map code in a client component, guarding script initialization, and providing a non-map fallback list/state when the script cannot load or the API key is missing.
+
+### Rollback
+Revert the new map helper/component/test files, restore `src/app/map/page.tsx` to the placeholder, and remove the related CSS additions. No data migration or backend rollback is required.
+
+### Progress
+- [x] Inspect prompt, project rules, map/mobile skills, existing IndexedDB reads, deeplink helper, and placeholder map page.
+- [x] Add pure map helpers and tests.
+- [x] Add mobile Yandex map client UI wired to IndexedDB.
+- [x] Replace placeholder map page and extend CSS.
+- [x] Run lint, typecheck, tests, build, and browser verification.
+
+Verification results:
+- `npm run lint`: passed
+- `npm run typecheck`: passed
+- `npm test`: passed, 12 files and 44 tests
+- `npm run build`: passed after clearing stale `.next` output
+- Browser check: opened `http://localhost:3001/map`, verified the empty IndexedDB/no-coordinate fallback, filters, summary counts, bottom navigation, and no console errors.
+
+---
+
+## Frontend API Access Layer
+
+### Goal
+Make the browser/server boundary explicit for PVZ Atlas by routing all frontend server calls through typed clients in `src/lib/api`, keeping UI data mutations local-first through IndexedDB and the change queue, and having the sync engine orchestrate pull-push-pull.
+
+### Current repo state
+The repo already has Next.js sync, geocode, and import route handlers; IndexedDB repository functions for local point/owner/visit mutations; server-side Sheets adapters; and a static Sync page. `AGENTS.md` already documents most frontend API access rules. There is not yet a `src/lib/api` folder, and there is no browser sync engine module that calls typed API clients.
+
+### Data and API impact
+Affected endpoint contracts are `GET /api/sync/pull`, `POST /api/sync/push`, `POST /api/geocode`, and `POST /api/import/points`. Shared request/response types and Zod schemas will live in the API/sync contract modules so route handlers and frontend clients do not drift. Push requests gain `clientId`; push responses expose server time, applied/rejected change ids, conflicts, and optionally changed entities.
+
+### Approach
+Add a shared typed fetch wrapper, typed clients for sync/geocode/import, and shared API types. Update sync contracts and route handlers to use the shared shapes. Add a client-side sync engine that pulls remote state into IndexedDB, reads queued local changes, pushes through `pushSync`, marks applied changes, stores conflicts, and pulls again. Add local domain-action aliases around existing repository mutations so UI code has clear local-first entry points.
+
+### Conflict and offline behavior
+Local UI mutations continue to write to IndexedDB first and enqueue `Change` records without network access. Sync runs pull, apply remote entities, push queued changes, apply push results, then pull again. Google Sheets manual edits remain remote changes; server push compares `baseVersion`, accepts provable non-conflicting changes, and returns conflicts for same-field differences.
+
+### UI behavior
+No major UI redesign is required. The Sync page/button should call `runSync()` in future UI wiring rather than direct `/api/sync/*` fetches. Existing list mutations remain offline-capable and show pending/conflict states from local tables.
+
+### Tests
+Add Vitest coverage for API client JSON/error behavior, sync engine API-client orchestration, and local mutations enqueueing `Change` records without direct network calls. Check direct `/api/sync` fetches with repository search and avoid adding a heavy custom lint system.
+
+### Risks
+The main risk is contract drift between existing route handlers and new typed clients. Mitigate by keeping Zod schemas and TypeScript types together and using the route handlers' schemas to parse responses. IndexedDB sync tests may need lightweight fake tables instead of a browser Dexie instance.
+
+### Rollback
+Remove the new `src/lib/api` clients and sync engine wiring, restore the previous `src/lib/sync/contracts.ts` schemas and sync route response shapes, and keep existing local IndexedDB repositories intact.
+
+### Progress
+- [x] Inspect existing repo structure, AGENTS rules, sync routes, IndexedDB repositories, and tests.
+- [x] Add shared API types, schemas, and typed fetch wrapper.
+- [x] Add sync/geocode/import API clients.
+- [x] Update sync route handlers and sync engine integration.
+- [x] Add local domain-action aliases for local-first mutations.
+- [x] Add/update tests.
+- [x] Run lint, typecheck, tests, and build.
+
+Verification results:
+- `npm run lint`: passed
+- `npm run typecheck`: passed
+- `npm test`: passed, 12 files and 44 tests
+- `npm run build`: passed
+- Direct fetch scan: only `src/lib/api/sync-api.ts` calls `/api/sync/push` outside route handlers.
+- Browser check: production server on `http://localhost:3010`, `/add` and `/sync` rendered expected controls with zero console errors.
+
+---
+
+## Import Geocode Dedupe Pipeline
+
+### Goal
+Import CSV/JSON PVZ point rows through a reviewable preview/apply flow that creates no duplicates and preserves human field-work data already stored in Sheets.
+
+### Current repo state
+`src/app/api/import/points/route.ts` previously validated a narrow JSON shape and echoed generated source keys with a warning. `src/lib/data-model/source-key.ts` has basic normalization and stable source-key helpers. `src/lib/sheets/adapter.ts` can read and write points by stable IDs and append through the Sheets adapter. `YANDEX_GEOCODER_API_KEY` is already documented in `.env.example`, and geocoding must stay server-side.
+
+### Data and API impact
+Affected entity: `Point`. Affected endpoint: `POST /api/import/points`, with modes for `preview` and `apply`. The route accepts CSV text or JSON rows, normalizes brand/city/address, generates `sourceKey`, deduplicates incoming rows, compares with existing points by `sourceKey` and normalized location, and writes only points that are new or safe metadata updates. No owner/status/comment/contact-style fields are overwritten on existing points.
+
+### Approach
+Add pure import helpers under `src/lib/import/points.ts` for parsing JSON/CSV, normalization, source keys, incoming dedupe, existing-point comparison, safe update construction, optional geocoding for missing coordinates, and preview category generation. Wire the route to read Sheets, run preview, and only write on explicit apply. Keep geocoding behind an injected server-side Yandex adapter and treat missing configuration or no-result lookups as warnings rather than import failures.
+
+### Conflict and offline behavior
+The import endpoint is a server-side Sheets operation, not an offline UI mutation. Field-work conflicts are avoided by preserving owner assignment, status, comments, and contact-like fields from existing points. If Google Sheets was edited manually, the import compares against the latest server snapshot and increments versions only for safe source/coordinate metadata changes.
+
+### UI behavior
+No mobile UI is added in this task. The endpoint returns structured preview buckets (`new`, `duplicate`, `update`, `invalid`) plus warnings so a future import screen can render review and apply states.
+
+### Tests
+Add Vitest coverage for normalization/source-key stability, JSON and CSV parsing, incoming dedupe, existing duplicate detection, safe update behavior, and geocoding only when coordinates are missing.
+
+### Risks
+CSV parsing is intentionally small and dependency-free; quoted-field edge cases are covered but full spreadsheet dialect support is limited. Real geocoding depends on `YANDEX_GEOCODER_API_KEY` and Yandex response availability, so the import pipeline treats missing configuration and no-result lookups as warnings rather than failures.
+
+### Rollback
+Revert the new `src/lib/import` module and tests, and restore `src/app/api/import/points/route.ts` to its previous preview stub. No schema migration is required.
+
+### Progress
+- [x] Inspect prompt, project rules, existing import route, data model, Sheets adapter, and geocode placeholder.
+- [x] Add pure import parser/preview/apply helpers.
+- [x] Wire `POST /api/import/points` preview/apply flow to Sheets.
+- [x] Add tests for normalization, sourceKey, dedupe, safe updates, and geocode behavior.
+- [x] Run lint, typecheck, tests, and build.
+
+Verification results:
+- `npm run lint`: passed
+- `npm run typecheck`: passed
+- `npm test`: passed, 12 files and 44 tests
+- `npm run build`: passed

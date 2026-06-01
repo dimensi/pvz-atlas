@@ -85,6 +85,36 @@ Entities:
 
 Do not use Google Sheets row numbers as IDs. Store row numbers only as temporary lookup metadata inside server-side sheet adapters.
 
+## Frontend API access rules
+
+Browser code must not call Google Sheets directly.
+
+All server communication must go through typed API clients in:
+
+src/lib/api/
+
+Expected modules:
+- `client.ts` — shared fetch wrapper.
+- `sync-api.ts` — pull/push sync requests.
+- `geocode-api.ts` — server-side geocoding requests.
+- `import-api.ts` — import preview/apply requests.
+
+UI components should not call `fetch` directly for sync or data mutations.
+Use typed API clients for explicit server actions such as geocoding/import preview.
+Prefer calling domain functions from `src/lib/sync`, `src/lib/indexeddb`, or typed API clients.
+
+Normal data flow is UI -> IndexedDB -> changes queue -> sync engine -> API clients -> route handlers -> adapters:
+1. UI reads from IndexedDB.
+2. UI writes mutations to IndexedDB.
+3. Mutations enqueue local `Change` records.
+4. Sync engine calls typed API clients.
+5. API clients call Next.js route handlers.
+6. Route handlers talk to Google Sheets/Yandex APIs.
+7. Sync result is merged back into IndexedDB.
+
+Do not push full records from UI actions directly to API routes.
+Do not bypass the local change queue.
+
 ## Sync rules
 
 The app is local-first:
