@@ -72,23 +72,7 @@ export interface ImportPreviewResult {
 export interface ImportPreviewOptions {
   clock: () => string;
   idFactory: () => string;
-  geocode?: GeocodePoint;
 }
-
-export interface GeocodeRequest {
-  brand: string;
-  city: string;
-  address: string;
-  sourceKey: string;
-  rowIndex: number;
-}
-
-export interface GeocodeResult {
-  lat: number;
-  lon: number;
-}
-
-export type GeocodePoint = (request: GeocodeRequest) => Promise<GeocodeResult | null>;
 
 const importRowSchema = z.object({
   rowIndex: z.number().int().positive().optional(),
@@ -325,12 +309,11 @@ function findExistingPoint(point: NormalizedImportPoint, existingPoints: Point[]
   );
 }
 
-async function coordinatesForImportPoint(
+function coordinatesForImportPoint(
   point: NormalizedImportPoint,
   existing: Point | undefined,
-  geocode: GeocodePoint | undefined,
   warnings: string[]
-): Promise<Pick<Point, "lat" | "lon">> {
+): Pick<Point, "lat" | "lon"> {
   if (hasCoordinates(point)) {
     return { lat: point.lat, lon: point.lon };
   }
@@ -339,25 +322,8 @@ async function coordinatesForImportPoint(
     return { lat: existing.lat, lon: existing.lon };
   }
 
-  if (!geocode) {
-    warnings.push(`Row ${point.rowIndex}: coordinates are missing and no server geocoder is configured.`);
-    return { lat: null, lon: null };
-  }
-
-  const result = await geocode({
-    brand: point.brand,
-    city: point.city,
-    address: point.address,
-    sourceKey: point.sourceKey,
-    rowIndex: point.rowIndex
-  });
-
-  if (!result) {
-    warnings.push(`Row ${point.rowIndex}: coordinates are missing and geocoding returned no result.`);
-    return { lat: null, lon: null };
-  }
-
-  return result;
+  warnings.push(`Row ${point.rowIndex}: coordinates are missing; point will not appear on the map.`);
+  return { lat: null, lon: null };
 }
 
 function buildNewPoint(point: NormalizedImportPoint, coordinates: Pick<Point, "lat" | "lon">, now: string, id: string): Point {
@@ -470,12 +436,7 @@ export async function buildImportPreview(
     firstRowBySourceKey.set(normalized.sourceKey, normalized.rowIndex);
 
     const existing = findExistingPoint(normalized, existingPoints);
-    const coordinates = await coordinatesForImportPoint(
-      normalized,
-      existing,
-      options.geocode,
-      result.warnings
-    );
+    const coordinates = coordinatesForImportPoint(normalized, existing, result.warnings);
 
     if (!existing) {
       result.new.push({

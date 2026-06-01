@@ -5,7 +5,6 @@ import { getSheetsSnapshot, invalidateSheetsSnapshot } from "@/lib/sheets/cache"
 import { GoogleSheetsConfigError } from "@/lib/sheets/google-client";
 import { writeSheetsChanges } from "@/lib/sheets/adapter";
 import { jsonError } from "@/lib/validation/api";
-import { geocodeYandexAddress } from "@/lib/yandex/geocode";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -95,15 +94,7 @@ export async function POST(request: Request) {
     const snapshot = await getSheetsSnapshot();
     const preview = await buildImportPreview(payload.rows, snapshot.points, {
       clock: () => new Date().toISOString(),
-      idFactory: () => crypto.randomUUID(),
-      geocode: async (point) => {
-        const result = await geocodeYandexAddress({
-          city: point.city,
-          address: point.address
-        });
-
-        return result.coordinates;
-      }
+      idFactory: () => crypto.randomUUID()
     });
     const invalid = [...payload.invalid, ...preview.invalid];
     const warnings = [

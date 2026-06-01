@@ -7,7 +7,7 @@ Build a mobile-first PWA for field collection and management of pickup points (P
 Core capabilities:
 - List PVZ grouped by owner.
 - Show PVZ without owner first.
-- Map mode with Yandex Maps.
+- Map mode with Leaflet and OpenStreetMap.
 - Open route to a PVZ through Yandex Maps deeplink.
 - Add a PVZ manually if it is missing.
 - Work offline on a phone using IndexedDB.
@@ -22,7 +22,7 @@ Use:
 - IndexedDB via Dexie for client local storage.
 - Next.js route handlers for backend endpoints.
 - Google Sheets API only from the server side.
-- Yandex Maps JS API for the in-app map.
+- Leaflet with OpenStreetMap tiles for the in-app map.
 - Yandex Maps deeplinks for routing.
 - Zod for runtime validation.
 - Vitest for unit tests where practical.
@@ -46,7 +46,6 @@ src/
       sync/
         pull/route.ts
         push/route.ts
-      geocode/route.ts
       import/points/route.ts
     map/page.tsx
     points/page.tsx
@@ -62,6 +61,7 @@ src/
     indexeddb/
     sync/
     sheets/
+    map/
     yandex/
     validation/
   styles/
@@ -96,7 +96,6 @@ src/lib/api/
 Expected modules:
 - `client.ts` — shared fetch wrapper.
 - `sync-api.ts` — pull/push sync requests.
-- `geocode-api.ts` — server-side geocoding requests.
 - `import-api.ts` — import preview/apply requests.
 
 UI components should not call `fetch` directly for sync or data mutations.
@@ -109,7 +108,7 @@ Normal data flow is UI -> IndexedDB -> changes queue -> sync engine -> API clien
 3. Mutations enqueue local `Change` records.
 4. Sync engine calls typed API clients.
 5. API clients call Next.js route handlers.
-6. Route handlers talk to Google Sheets/Yandex APIs.
+6. Route handlers talk to Google Sheets adapters.
 7. Sync result is merged back into IndexedDB.
 
 Do not push full records from UI actions directly to API routes.
@@ -170,10 +169,10 @@ Primary tabs:
 
 ## Map rules
 
-Use Yandex Maps for displaying points.
-Use deeplinks for routes instead of implementing routing in-app.
-Store `lat` and `lon` in the data model; do not geocode on every render.
-Geocoding must be server-side and should happen only when adding/importing points or explicitly refreshing coordinates.
+Use Leaflet with OpenStreetMap tiles for displaying points.
+Use Yandex Maps deeplinks for routes instead of implementing routing in-app.
+Store `lat` and `lon` in the data model; never geocode on render.
+The MVP does not geocode addresses automatically. Coordinates come from manual entry, CSV/JSON import, or manual Google Sheets edits.
 
 ## Import rules
 
@@ -182,7 +181,7 @@ Import pipeline:
 2. Normalize brand, city, and address.
 3. Generate stable `sourceKey`.
 4. Deduplicate by brand + normalized city + normalized address.
-5. Geocode missing coordinates.
+5. Preserve provided coordinates and warn when coordinates are missing.
 6. Preview changes before writing.
 7. Batch write to Sheets.
 

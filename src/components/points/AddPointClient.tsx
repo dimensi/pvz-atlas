@@ -1,23 +1,18 @@
 "use client";
 
 import { useState } from "react";
-import { MapPin, Save } from "lucide-react";
-import { geocodeAddress } from "@/lib/api/geocode-api";
+import { Save } from "lucide-react";
+import { parsePointCoordinateInputs } from "@/lib/points/coordinates";
 import { createPointLocal } from "@/lib/sync/local-actions";
-
-interface Coordinates {
-  lat: number;
-  lon: number;
-}
 
 export default function AddPointClient() {
   const [brand, setBrand] = useState("");
   const [city, setCity] = useState("");
   const [address, setAddress] = useState("");
   const [comment, setComment] = useState("");
-  const [coordinates, setCoordinates] = useState<Coordinates | null>(null);
+  const [lat, setLat] = useState("");
+  const [lon, setLon] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [isGeocoding, setIsGeocoding] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -35,34 +30,15 @@ export default function AddPointClient() {
     return true;
   };
 
-  const handleGeocode = async () => {
+  const handleSave = async () => {
     resetStatus();
     if (!validateRequiredFields()) {
       return;
     }
 
-    try {
-      setIsGeocoding(true);
-      const result = await geocodeAddress({
-        city: city.trim(),
-        address: address.trim()
-      });
-      setCoordinates(result.coordinates);
-      setStatus(
-        result.coordinates
-          ? "Координаты сохранены для локальной точки."
-          : result.warnings?.[0] ?? "Координаты не найдены."
-      );
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Геокодирование не выполнено.");
-    } finally {
-      setIsGeocoding(false);
-    }
-  };
-
-  const handleSave = async () => {
-    resetStatus();
-    if (!validateRequiredFields()) {
+    const parsedCoordinates = parsePointCoordinateInputs(lat, lon);
+    if (!parsedCoordinates.ok) {
+      setError(parsedCoordinates.message);
       return;
     }
 
@@ -72,15 +48,16 @@ export default function AddPointClient() {
         brand: brand.trim(),
         city: city.trim(),
         address: address.trim(),
-        lat: coordinates?.lat ?? null,
-        lon: coordinates?.lon ?? null,
+        lat: parsedCoordinates.coordinates?.lat ?? null,
+        lon: parsedCoordinates.coordinates?.lon ?? null,
         comment: comment.trim() || null
       });
       setBrand("");
       setCity("");
       setAddress("");
       setComment("");
-      setCoordinates(null);
+      setLat("");
+      setLon("");
       setStatus("ПВЗ сохранен локально и добавлен в очередь синхронизации.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Не удалось сохранить ПВЗ.");
@@ -140,28 +117,38 @@ export default function AddPointClient() {
             onChange={(event) => setComment(event.target.value)}
           />
         </div>
-        {coordinates ? (
-          <p className="lead">
-            Координаты: {coordinates.lat}, {coordinates.lon}
-          </p>
-        ) : null}
+        <div className="form-grid-two">
+          <div className="field">
+            <label htmlFor="lat">Широта</label>
+            <input
+              id="lat"
+              inputMode="decimal"
+              name="lat"
+              placeholder="55.751244"
+              value={lat}
+              onChange={(event) => setLat(event.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="lon">Долгота</label>
+            <input
+              id="lon"
+              inputMode="decimal"
+              name="lon"
+              placeholder="37.618423"
+              value={lon}
+              onChange={(event) => setLon(event.target.value)}
+            />
+          </div>
+        </div>
         {error ? <div className="error-banner">{error}</div> : null}
         {status ? <p>{status}</p> : null}
         <div className="action-row">
           <button
-            className="button secondary"
-            type="button"
-            onClick={handleGeocode}
-            disabled={isGeocoding || isSaving}
-          >
-            <MapPin size={18} aria-hidden="true" />
-            {isGeocoding ? "Ищу..." : "Геокодировать"}
-          </button>
-          <button
             className="button"
             type="button"
             onClick={handleSave}
-            disabled={isSaving || isGeocoding}
+            disabled={isSaving}
           >
             <Save size={18} aria-hidden="true" />
             {isSaving ? "Сохраняю..." : "Сохранить"}

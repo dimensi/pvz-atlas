@@ -320,6 +320,52 @@ Verification results:
 - `npm run typecheck`: passed
 - `npm test`: passed, 12 files and 44 tests
 - `npm run build`: passed
+
+---
+
+## Leaflet OSM Map Without Geocoding
+
+### Goal
+Show PVZ points on the map with Leaflet and OpenStreetMap tiles, keep external route buttons as Yandex Maps deeplinks, and remove automatic address geocoding from add/import flows.
+
+### Current repo state
+The map screen was implemented in `src/components/map/YandexMapClient.tsx` and loaded by `src/app/map/page.tsx`. Generic marker filtering helpers lived under `src/lib/yandex/map.ts`. Route buttons use `src/lib/yandex/deeplinks.ts`. Add/import flows called `/api/geocode`, which delegated to `src/lib/yandex/geocode.ts`.
+
+### Data and API impact
+`Point.lat` and `Point.lon` stay in the data model, Sheets schema, IndexedDB, and sync patches. `/api/geocode` and the typed geocode client are removed. Import keeps CSV/JSON `lat`/`lon` values when provided and otherwise leaves coordinates null with warnings.
+
+### Approach
+Install `leaflet` and `react-leaflet`, plus Leaflet types. Replace the Yandex map component with a Leaflet client component using OSM tiles and custom CSS markers. Move generic map point helpers into `src/lib/map/points.ts`. Update the add form to accept optional latitude and longitude fields instead of a geocode button. Remove Yandex geocoder modules and env vars while keeping Yandex route deeplink helpers.
+
+### Conflict and offline behavior
+No sync conflict behavior changes. Manual coordinate edits still move through existing local-first mutations, change queue patches, server version checks, and Sheets conflict handling. Points saved without coordinates remain valid local records and sync normally, but they are omitted from marker rendering.
+
+### UI behavior
+The map keeps current mobile filters, loading/empty/error overlays, summary counts, missing-coordinate list, marker bottom sheet, and Yandex route action. Add form exposes optional coordinate inputs and validates that latitude and longitude are either both empty or both valid.
+
+### Tests
+Update map helper tests after moving modules. Update import tests to remove auto-geocode behavior and cover missing-coordinate warnings. Add coordinate input validation tests. Keep Yandex deeplink tests. Run lint, typecheck, tests, build, and a browser smoke check for `/map`.
+
+### Risks
+Leaflet CSS and marker sizing can break mobile layout if not loaded globally. React Leaflet map props are mostly immutable after init, so viewport updates use a small `useMap` controller. OSM public tiles are acceptable for MVP usage but may need a dedicated tile provider later.
+
+### Rollback
+Revert the new Leaflet component/helpers/dependencies, restore the Yandex map component and geocode route/client/modules, and re-add Yandex map/geocoder env vars.
+
+### Progress
+- [x] Create worktree and merge current `main`.
+- [x] Add map dependencies.
+- [x] Replace Yandex map display with Leaflet/OSM.
+- [x] Remove geocoding and update add/import flows.
+- [x] Update map helper tests and add coordinate parsing tests.
+- [x] Run verification commands and browser smoke check.
+
+Verification results:
+- `npm run lint`: passed
+- `npm run typecheck`: passed
+- `npm test`: passed, 13 files and 47 tests
+- `npm run build`: passed
+- Browser smoke check: `http://localhost:3011/map` rendered the map page with no console errors.
 - Direct fetch scan: only `src/lib/api/sync-api.ts` calls `/api/sync/push` outside route handlers.
 - Browser check: production server on `http://localhost:3010`, `/add` and `/sync` rendered expected controls with zero console errors.
 

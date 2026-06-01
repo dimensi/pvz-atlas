@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import type { Point } from "@/lib/data-model/types";
 import {
   buildImportPreview,
@@ -121,26 +121,16 @@ describe("point import pipeline", () => {
     });
   });
 
-  it("geocodes only when both incoming and existing coordinates are missing", async () => {
-    const geocode = vi.fn().mockResolvedValue({ lat: 55.75, lon: 37.61 });
-
-    await buildImportPreview(
-      [{ brand: "Ozon", city: "Moscow", address: "Main Street 10", lat: 55.7, lon: 37.6 }],
-      [],
-      { ...options, geocode }
-    );
-    await buildImportPreview(
-      [{ brand: "Ozon", city: "Moscow", address: "Main Street 10" }],
-      [existingPoint({ lat: 55.7, lon: 37.6 })],
-      { ...options, geocode }
-    );
-    const needsGeocode = await buildImportPreview(
+  it("leaves missing coordinates empty and reports a map visibility warning", async () => {
+    const preview = await buildImportPreview(
       [{ brand: "Ozon", city: "Moscow", address: "Main Street 10" }],
       [],
-      { ...options, geocode }
+      options
     );
 
-    expect(geocode).toHaveBeenCalledTimes(1);
-    expect(needsGeocode.new[0].point).toMatchObject({ lat: 55.75, lon: 37.61 });
+    expect(preview.new[0].point).toMatchObject({ lat: null, lon: null });
+    expect(preview.warnings).toEqual([
+      "Row 1: coordinates are missing; point will not appear on the map."
+    ]);
   });
 });

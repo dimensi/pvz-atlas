@@ -213,7 +213,7 @@ select {
 
 .action-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
   gap: 8px;
 }
 
@@ -239,6 +239,12 @@ select {
 .form {
   display: grid;
   gap: 12px;
+}
+
+.form-grid-two {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
 .field {
@@ -306,6 +312,55 @@ select {
     linear-gradient(rgba(15, 118, 110, 0.08) 1px, transparent 1px),
     var(--surface);
   background-size: 28px 28px;
+}
+
+.map-canvas-loading,
+.map-canvas-leaflet,
+.map-canvas .leaflet-container {
+  width: 100%;
+  height: 100%;
+  min-height: inherit;
+}
+
+.map-canvas .leaflet-control-attribution {
+  font-size: 10px;
+}
+
+.map-marker {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22);
+}
+
+.map-marker span {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.map-marker-new {
+  color: #64748b;
+  background: #f8fafc;
+}
+
+.map-marker-active {
+  color: #0f766e;
+  background: #ccfbf1;
+}
+
+.map-marker-needs-review {
+  color: #b45309;
+  background: #fef3c7;
+}
+
+.map-marker-closed {
+  color: #475569;
+  background: #e2e8f0;
 }
 
 .map-overlay {

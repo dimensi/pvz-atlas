@@ -3,7 +3,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 const sourceRoot = join(process.cwd(), "src");
-const forbiddenFetchPattern = /fetch\(\s*["'`]\/api\/(?:sync|geocode|import)/;
+const forbiddenFetchPattern = /fetch\(\s*["'`]\/api\/(?:sync|import)/;
 
 function sourceFiles(directory: string): string[] {
   return readdirSync(directory).flatMap((entry) => {

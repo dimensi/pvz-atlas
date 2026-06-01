@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -13,64 +14,30 @@ import {
 } from "lucide-react";
 import type { Change, Conflict, Owner, Point, PointStatus } from "@/lib/data-model/types";
 import { db } from "@/lib/indexeddb/db";
-import { POINT_STATUS_LABELS } from "@/lib/points/list";
-import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
 import {
-  buildYandexMapsScriptUrl,
   createMapPointItems,
   DEFAULT_NEARBY_RADIUS_METERS,
   filterMapMarkers,
   getAvailableMapBrands,
   splitPointCoordinates,
   type GeoPoint,
-  type MappablePointItem,
   type MapQuickFilter
-} from "@/lib/yandex/map";
+} from "@/lib/map/points";
+import { POINT_STATUS_LABELS } from "@/lib/points/list";
+import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
+
+const LeafletMapView = dynamic(() => import("./LeafletMapView"), {
+  ssr: false,
+  loading: () => <div className="map-canvas map-canvas-loading" />
+});
 
 type SyncState = "synced" | "pending" | "conflict" | "offline";
-type MapStatus = "idle" | "loading" | "ready" | "error";
-type YandexCoordinates = [number, number];
 
 interface MapState {
   points: Point[];
   owners: Owner[];
   pendingChanges: Change[];
   conflicts: Conflict[];
-}
-
-interface YandexPlacemark {
-  events: {
-    add: (eventName: "click", handler: () => void) => void;
-  };
-}
-
-interface YandexMapInstance {
-  geoObjects: {
-    add: (placemark: YandexPlacemark) => void;
-    removeAll: () => void;
-  };
-  setCenter: (center: YandexCoordinates, zoom?: number, options?: { duration?: number }) => void;
-  destroy: () => void;
-}
-
-interface YandexMapsNamespace {
-  ready: (callback: () => void) => void;
-  Map: new (
-    element: HTMLElement,
-    state: { center: YandexCoordinates; zoom: number; controls: string[] },
-    options?: Record<string, unknown>
-  ) => YandexMapInstance;
-  Placemark: new (
-    coordinates: YandexCoordinates,
-    properties: Record<string, unknown>,
-    options: Record<string, unknown>
-  ) => YandexPlacemark;
-}
-
-declare global {
-  interface Window {
-    ymaps?: YandexMapsNamespace;
-  }
 }
 
 const EMPTY_STATE: MapState = {
@@ -81,8 +48,6 @@ const EMPTY_STATE: MapState = {
 };
 
 const STATUS_OPTIONS: PointStatus[] = ["new", "active", "needs_review", "closed"];
-const DEFAULT_MAP_CENTER: YandexCoordinates = [55.751244, 37.618423];
-const MAP_API_KEY = process.env.NEXT_PUBLIC_YANDEX_MAPS_API_KEY ?? "";
 
 const SYNC_LABELS: Record<SyncState, string> = {
   synced: "Синхр.",
@@ -90,15 +55,6 @@ const SYNC_LABELS: Record<SyncState, string> = {
   conflict: "Конфликт",
   offline: "Офлайн"
 };
-
-const STATUS_MARKER_COLORS: Record<PointStatus, string> = {
-  new: "#64748b",
-  active: "#0f766e",
-  needs_review: "#b45309",
-  closed: "#475569"
-};
-
-let yandexMapsPromise: Promise<YandexMapsNamespace> | null = null;
 
 async function readMapState(): Promise<MapState> {
   const [points, owners, pendingChanges, conflicts] = await Promise.all([
@@ -113,32 +69,6 @@ async function readMapState(): Promise<MapState> {
   ]);
 
   return { points, owners, pendingChanges, conflicts };
-}
-
-function loadYandexMaps(apiKey: string): Promise<YandexMapsNamespace> {
-  if (window.ymaps) {
-    return Promise.resolve(window.ymaps);
-  }
-
-  yandexMapsPromise ??= new Promise((resolve, reject) => {
-    const script = document.createElement("script");
-    script.id = "yandex-maps-api";
-    script.src = buildYandexMapsScriptUrl(apiKey);
-    script.async = true;
-    script.defer = true;
-    script.onload = () => {
-      if (!window.ymaps) {
-        reject(new Error("Yandex Maps API did not expose ymaps."));
-        return;
-      }
-
-      window.ymaps.ready(() => resolve(window.ymaps as YandexMapsNamespace));
-    };
-    script.onerror = () => reject(new Error("Yandex Maps API script failed to load."));
-    document.head.appendChild(script);
-  });
-
-  return yandexMapsPromise;
 }
 
 function statusClassName(status: PointStatus): string {
@@ -177,26 +107,6 @@ function isKnownStatus(value: string): value is PointStatus {
   return STATUS_OPTIONS.includes(value as PointStatus);
 }
 
-function markerCenter(items: MappablePointItem[]): YandexCoordinates {
-  if (items.length === 0) {
-    return DEFAULT_MAP_CENTER;
-  }
-
-  const total = items.reduce(
-    (sum, item) => ({
-      lat: sum.lat + item.coordinates.lat,
-      lon: sum.lon + item.coordinates.lon
-    }),
-    { lat: 0, lon: 0 }
-  );
-
-  return [total.lat / items.length, total.lon / items.length];
-}
-
-function markerZoom(items: MappablePointItem[]): number {
-  return items.length === 1 ? 15 : 11;
-}
-
 function formatDistance(value: number | null): string | null {
   if (value === null) {
     return null;
@@ -209,9 +119,7 @@ function formatDistance(value: number | null): string | null {
   return `${(value / 1000).toFixed(1)} км`;
 }
 
-export default function YandexMapClient() {
-  const mapElementRef = useRef<HTMLDivElement | null>(null);
-  const mapInstanceRef = useRef<YandexMapInstance | null>(null);
+export default function LeafletMapClient() {
   const [state, setState] = useState<MapState>(EMPTY_STATE);
   const [mode, setMode] = useState<MapQuickFilter>("all");
   const [brand, setBrand] = useState("");
@@ -222,7 +130,6 @@ export default function YandexMapClient() {
   const [isLocating, setIsLocating] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
-  const [mapStatus, setMapStatus] = useState<MapStatus>("idle");
   const [error, setError] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
@@ -281,87 +188,6 @@ export default function YandexMapClient() {
     [filteredMarkers, selectedPointId]
   );
   const globalSyncState = getGlobalSyncState(state, isOnline);
-
-  useEffect(() => {
-    if (coordinateSplit.withCoordinates.length === 0 || filteredMarkers.length === 0) {
-      mapInstanceRef.current?.geoObjects.removeAll();
-      const idleTimer = window.setTimeout(() => setMapStatus("idle"), 0);
-      return () => window.clearTimeout(idleTimer);
-    }
-
-    if (!MAP_API_KEY) {
-      const errorTimer = window.setTimeout(() => {
-        setMapStatus("error");
-        setMapError("Добавьте NEXT_PUBLIC_YANDEX_MAPS_API_KEY в окружение для загрузки карты.");
-      }, 0);
-      return () => window.clearTimeout(errorTimer);
-    }
-
-    let cancelled = false;
-    const loadingTimer = window.setTimeout(() => {
-      setMapStatus("loading");
-      setMapError(null);
-    }, 0);
-
-    loadYandexMaps(MAP_API_KEY)
-      .then((ymaps) => {
-        if (cancelled || !mapElementRef.current) {
-          return;
-        }
-
-        const center = markerCenter(filteredMarkers);
-        const zoom = markerZoom(filteredMarkers);
-        const map =
-          mapInstanceRef.current ??
-          new ymaps.Map(
-            mapElementRef.current,
-            { center, zoom, controls: ["zoomControl"] },
-            { suppressMapOpenBlock: true }
-          );
-
-        mapInstanceRef.current = map;
-        map.geoObjects.removeAll();
-
-        for (const item of filteredMarkers) {
-          const placemark = new ymaps.Placemark(
-            [item.coordinates.lat, item.coordinates.lon],
-            {
-              hintContent: `${item.point.brand}: ${item.point.address}`
-            },
-            {
-              preset: "islands#circleDotIcon",
-              iconColor: STATUS_MARKER_COLORS[item.point.status]
-            }
-          );
-          placemark.events.add("click", () => setSelectedPointId(item.point.id));
-          map.geoObjects.add(placemark);
-        }
-
-        map.setCenter(center, zoom, { duration: 200 });
-        setMapStatus("ready");
-      })
-      .catch((caught) => {
-        if (!cancelled) {
-          setMapStatus("error");
-          setMapError(
-            caught instanceof Error ? caught.message : "Не удалось загрузить Яндекс Карты."
-          );
-        }
-      });
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(loadingTimer);
-    };
-  }, [coordinateSplit.withCoordinates.length, filteredMarkers]);
-
-  useEffect(
-    () => () => {
-      mapInstanceRef.current?.destroy();
-      mapInstanceRef.current = null;
-    },
-    []
-  );
 
   const handleNearby = () => {
     if (mode === "nearby") {
@@ -462,7 +288,15 @@ export default function YandexMapClient() {
       {locationError ? <div className="error-banner">{locationError}</div> : null}
 
       <section className="map-panel" aria-label="Карта ПВЗ">
-        <div className="map-canvas" ref={mapElementRef} />
+        <div className="map-canvas">
+          {coordinateSplit.withCoordinates.length > 0 && filteredMarkers.length > 0 ? (
+            <LeafletMapView
+              markers={filteredMarkers}
+              onMarkerSelect={setSelectedPointId}
+              onTileError={() => setMapError("Не удалось загрузить тайлы OpenStreetMap.")}
+            />
+          ) : null}
+        </div>
         {isLoading ? (
           <div className="map-overlay">
             <Clock3 size={22} aria-hidden="true" />
@@ -473,7 +307,7 @@ export default function YandexMapClient() {
           <div className="map-overlay">
             <MapPinned size={22} aria-hidden="true" />
             <strong>Нет точек с координатами</strong>
-            <span>Координаты появятся после импорта, добавления или геокодирования.</span>
+            <span>Добавьте lat/lon вручную, через импорт или Google Sheets.</span>
           </div>
         ) : filteredMarkers.length === 0 ? (
           <div className="map-overlay">
@@ -481,17 +315,11 @@ export default function YandexMapClient() {
             <strong>Нет маркеров по фильтрам</strong>
             <span>Измените быстрый фильтр, бренд или статус.</span>
           </div>
-        ) : mapStatus === "error" ? (
+        ) : mapError ? (
           <div className="map-overlay map-overlay-error" role="alert">
             <AlertTriangle size={22} aria-hidden="true" />
             <strong>Карта не загрузилась</strong>
-            <span>{mapError ?? "Проверьте ключ и доступность Yandex Maps API."}</span>
-          </div>
-        ) : mapStatus === "loading" ? (
-          <div className="map-overlay">
-            <Clock3 size={22} aria-hidden="true" />
-            <strong>Загружаю Яндекс Карты</strong>
-            <span>Маркеров: {filteredMarkers.length}</span>
+            <span>{mapError}</span>
           </div>
         ) : null}
       </section>

@@ -45,22 +45,6 @@ export const pushResponseSchema = z.object({
   warnings: z.array(z.string()).optional()
 });
 
-export const geocodeRequestSchema = z.object({
-  city: z.string().min(1),
-  address: z.string().min(1)
-});
-
-export const geocodeResponseSchema = z.object({
-  query: z.string(),
-  coordinates: z
-    .object({
-      lat: z.number(),
-      lon: z.number()
-    })
-    .nullable(),
-  warnings: z.array(z.string()).optional()
-});
-
 export const importPointInputSchema = z.object({
   rowIndex: z.number().int().positive().optional(),
   brand: z.string().min(1),
@@ -142,8 +126,6 @@ export type PullResponse = z.infer<typeof pullResponseSchema>;
 export type PushRequest = z.infer<typeof pushRequestSchema>;
 export type PushResponse = z.infer<typeof pushResponseSchema>;
 export type RejectedChange = z.infer<typeof rejectedChangeSchema>;
-export type GeocodeRequest = z.infer<typeof geocodeRequestSchema>;
-export type GeocodeResponse = z.infer<typeof geocodeResponseSchema>;
 export type ImportPointInput = z.infer<typeof importPointInputSchema>;
 export type ImportPreviewRequest = z.infer<typeof importPreviewRequestSchema>;
 export type ImportApplyRequest = z.infer<typeof importApplyRequestSchema>;

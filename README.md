@@ -14,9 +14,10 @@ This pack contains repository-level Codex guidance, reusable skills, and task pr
 - Next.js App Router
 - TypeScript
 - Mobile-first PWA
-- Yandex Maps for map UI
+- Leaflet and OpenStreetMap for map UI
 - Yandex Maps deeplinks for routes
 - IndexedDB/Dexie for local-first storage
 - Next.js API routes as the small backend
 - Google Sheets as editable remote storage
 - Patch-based sync with record versions and conflict handling
+- Coordinates are stored as `lat`/`lon`; the app does not geocode addresses automatically.

@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
 import type { Owner, Point } from "@/lib/data-model/types";
 import {
-  buildYandexMapsScriptUrl,
   createMapPointItems,
   filterMapMarkers,
   getAvailableMapBrands,
   splitPointCoordinates
-} from "./map";
+} from "./points";
 
 const now = "2026-01-01T00:00:00.000Z";
 
@@ -51,7 +50,7 @@ function owner(overrides: Partial<Owner> & Pick<Owner, "id" | "name">): Owner {
   };
 }
 
-describe("Yandex map helpers", () => {
+describe("map point helpers", () => {
   const owners = [owner({ id: "owner-1", name: "Альфа" })];
 
   it("separates mappable points from missing or malformed coordinates", () => {
@@ -85,7 +84,12 @@ describe("Yandex map helpers", () => {
             ownerId: "owner-1",
             status: "active"
           }),
-          point({ id: "no-owner-review", address: "Ленина 3", brand: "Ozon", status: "needs_review" })
+          point({
+            id: "no-owner-review",
+            address: "Ленина 3",
+            brand: "Ozon",
+            status: "needs_review"
+          })
         ],
         owners
       )
@@ -121,7 +125,7 @@ describe("Yandex map helpers", () => {
     expect(filtered[0].distanceMeters).not.toBeNull();
   });
 
-  it("returns marker brands and builds the Yandex script URL from env-provided keys", () => {
+  it("returns marker brands", () => {
     const split = splitPointCoordinates(
       createMapPointItems(
         [
@@ -131,9 +135,7 @@ describe("Yandex map helpers", () => {
         owners
       )
     );
-    const url = buildYandexMapsScriptUrl("key-123");
 
     expect(getAvailableMapBrands(split.withCoordinates)).toEqual(["Ozon", "WB"]);
-    expect(url).toBe("https://api-maps.yandex.ru/2.1/?apikey=key-123&lang=ru_RU");
   });
 });

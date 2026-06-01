@@ -1,5 +1,5 @@
-import YandexMapClient from "@/components/map/YandexMapClient";
+import LeafletMapClient from "@/components/map/LeafletMapClient";
 
 export default function MapPage() {
-  return <YandexMapClient />;
+  return <LeafletMapClient />;
 }

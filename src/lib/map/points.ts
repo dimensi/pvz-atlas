@@ -55,9 +55,7 @@ export function getPointCoordinates(point: Point): GeoPoint | null {
 
 export function createMapPointItems(points: Point[], owners: Owner[]): MapPointItem[] {
   const ownerById = new Map(
-    owners
-      .filter((owner) => owner.deletedAt === null)
-      .map((owner) => [owner.id, owner])
+    owners.filter((owner) => owner.deletedAt === null).map((owner) => [owner.id, owner])
   );
 
   return points
@@ -118,10 +116,11 @@ export function filterMapMarkers(
         return false;
       }
 
-      if (mode === "nearby") {
-        if (item.distanceMeters === null || item.distanceMeters > nearbyRadiusMeters) {
-          return false;
-        }
+      if (
+        mode === "nearby" &&
+        (item.distanceMeters === null || item.distanceMeters > nearbyRadiusMeters)
+      ) {
+        return false;
       }
 
       if (brand && normalizeFilter(item.point.brand) !== brand) {
@@ -150,13 +149,4 @@ export function getAvailableMapBrands(items: MappablePointItem[]): string[] {
   return [...new Set(items.map((item) => item.point.brand).filter(Boolean))].sort((left, right) =>
     left.localeCompare(right, "ru-RU", { sensitivity: "base" })
   );
-}
-
-export function buildYandexMapsScriptUrl(apiKey: string, lang = "ru_RU"): string {
-  const params = new URLSearchParams({
-    apikey: apiKey,
-    lang
-  });
-
-  return `https://api-maps.yandex.ru/2.1/?${params.toString()}`;
 }
