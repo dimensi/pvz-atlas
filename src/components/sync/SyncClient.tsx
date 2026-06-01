@@ -78,8 +78,8 @@ export default function SyncClient() {
       <section>
         <h2 className="page-title">Синхронизация</h2>
         <p className="lead">
-          Синхронизация идет по схеме pull, push, pull, чтобы ручные правки в
-          Google Sheets учитывались до и после отправки локальных патчей.
+          Список и карта обновляются автоматически при наличии сети. Здесь можно
+          проверить очередь и принудительно запустить полный цикл pull, push, pull.
         </p>
       </section>
 
@@ -92,7 +92,7 @@ export default function SyncClient() {
         {status ? <p>{status}</p> : null}
         <button className="button" type="button" onClick={handleSync} disabled={isSyncing}>
           <RefreshCw size={18} aria-hidden="true" />
-          {isSyncing ? "Синхронизация..." : "Запустить синхронизацию"}
+          {isSyncing ? "Синхронизация..." : "Принудительно синхронизировать"}
         </button>
       </section>
 

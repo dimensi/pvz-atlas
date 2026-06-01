@@ -28,30 +28,62 @@ export interface RunSyncResult {
   pendingChangeCount: number;
 }
 
-const defaultClientId = "local";
-const lastPullMetaKey = "lastPullServerTime";
-const lastPushMetaKey = "lastPushServerTime";
+export interface RefreshOnlineCacheResult {
+  mode: "pull" | "sync";
+  pulled: PullResponse | null;
+  synced: RunSyncResult | null;
+}
 
-async function applyPullResponse(database: PvzDatabase, response: PullResponse): Promise<void> {
+const defaultClientId = "local";
+export const LAST_PULL_META_KEY = "lastPullServerTime";
+export const LAST_PUSH_META_KEY = "lastPushServerTime";
+
+type SyncableEntityName = Change["entityName"];
+
+function changeKey(change: Pick<Change, "entityName" | "entityId" | "baseVersion">): string {
+  return `${change.entityName}:${change.entityId}:${change.baseVersion}`;
+}
+
+function dirtyEntityIds(changes: Change[], entityName: SyncableEntityName): Set<string> {
+  return new Set(
+    changes
+      .filter((change) => change.entityName === entityName)
+      .map((change) => change.entityId)
+  );
+}
+
+async function applyPullResponse(
+  database: PvzDatabase,
+  response: PullResponse,
+  pendingLocalChanges: Change[]
+): Promise<void> {
+  const dirtyPoints = dirtyEntityIds(pendingLocalChanges, "point");
+  const dirtyOwners = dirtyEntityIds(pendingLocalChanges, "owner");
+  const dirtyVisits = dirtyEntityIds(pendingLocalChanges, "visit");
+
   await database.transaction(
     "rw",
     [database.points, database.owners, database.visits, database.conflicts, database.meta],
     async () => {
-      if (response.points.length > 0) {
-        await database.points.bulkPut(response.points);
+      const cleanPoints = response.points.filter((point) => !dirtyPoints.has(point.id));
+      const cleanOwners = response.owners.filter((owner) => !dirtyOwners.has(owner.id));
+      const cleanVisits = response.visits.filter((visit) => !dirtyVisits.has(visit.id));
+
+      if (cleanPoints.length > 0) {
+        await database.points.bulkPut(cleanPoints);
       }
-      if (response.owners.length > 0) {
-        await database.owners.bulkPut(response.owners);
+      if (cleanOwners.length > 0) {
+        await database.owners.bulkPut(cleanOwners);
       }
-      if (response.visits.length > 0) {
-        await database.visits.bulkPut(response.visits);
+      if (cleanVisits.length > 0) {
+        await database.visits.bulkPut(cleanVisits);
       }
       if (response.conflicts && response.conflicts.length > 0) {
         await database.conflicts.bulkPut(response.conflicts);
       }
 
       await database.meta.put({
-        key: lastPullMetaKey,
+        key: LAST_PULL_META_KEY,
         value: response.serverTime,
         updatedAt: response.serverTime
       });
@@ -60,7 +92,7 @@ async function applyPullResponse(database: PvzDatabase, response: PullResponse):
 }
 
 async function getLastPullSince(database: PvzDatabase): Promise<string | null> {
-  const entry = await database.meta.get(lastPullMetaKey);
+  const entry = await database.meta.get(LAST_PULL_META_KEY);
   return typeof entry?.value === "string" ? entry.value : null;
 }
 
@@ -70,6 +102,18 @@ async function getPendingLocalChanges(database: PvzDatabase): Promise<Change[]> 
     .toArray();
 
   return changes.sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+}
+
+async function getPushableLocalChanges(database: PvzDatabase): Promise<Change[]> {
+  const [changes, conflicts] = await Promise.all([
+    getPendingLocalChanges(database),
+    database.conflicts
+      .filter((conflict) => conflict.deletedAt === null && conflict.resolvedAt === null)
+      .toArray()
+  ]);
+  const conflictedChangeKeys = new Set(conflicts.map(changeKey));
+
+  return changes.filter((change) => !conflictedChangeKeys.has(changeKey(change)));
 }
 
 async function applyPushResponse(database: PvzDatabase, response: PushResponse): Promise<void> {
@@ -106,7 +150,7 @@ async function applyPushResponse(database: PvzDatabase, response: PushResponse):
       }
 
       await database.meta.put({
-        key: lastPushMetaKey,
+        key: LAST_PUSH_META_KEY,
         value: response.serverTime,
         updatedAt: response.serverTime
       });
@@ -123,18 +167,20 @@ export async function runSync(options: RunSyncOptions = {}): Promise<RunSyncResu
   const clientId = options.clientId ?? defaultClientId;
   const since = options.since === undefined ? await getLastPullSince(database) : options.since;
 
+  const pendingBeforePull = await getPendingLocalChanges(database);
   const firstPull = await api.pullSync(since);
-  await applyPullResponse(database, firstPull);
+  await applyPullResponse(database, firstPull, pendingBeforePull);
 
-  const changes = await getPendingLocalChanges(database);
+  const changes = await getPushableLocalChanges(database);
   const pushRequest: PushRequest = { clientId, changes };
   const pushed = changes.length > 0 ? await api.pushSync(pushRequest) : null;
   if (pushed) {
     await applyPushResponse(database, pushed);
   }
 
+  const pendingBeforeFinalPull = await getPendingLocalChanges(database);
   const finalPull = await api.pullSync(null);
-  await applyPullResponse(database, finalPull);
+  await applyPullResponse(database, finalPull, pendingBeforeFinalPull);
 
   return {
     firstPull,
@@ -142,4 +188,46 @@ export async function runSync(options: RunSyncOptions = {}): Promise<RunSyncResu
     finalPull,
     pendingChangeCount: changes.length
   };
+}
+
+let refreshOnlineCachePromise: Promise<RefreshOnlineCacheResult> | null = null;
+
+async function refreshOnlineCacheNow(
+  options: RunSyncOptions = {}
+): Promise<RefreshOnlineCacheResult> {
+  const database = options.database ?? db;
+  const api = options.api ?? {
+    pullSync: defaultPullSync,
+    pushSync: defaultPushSync
+  };
+  const changes = await getPushableLocalChanges(database);
+
+  if (changes.length > 0) {
+    return {
+      mode: "sync",
+      pulled: null,
+      synced: await runSync(options)
+    };
+  }
+
+  const since = options.since === undefined ? await getLastPullSince(database) : options.since;
+  const pendingBeforePull = await getPendingLocalChanges(database);
+  const pulled = await api.pullSync(since);
+  await applyPullResponse(database, pulled, pendingBeforePull);
+
+  return {
+    mode: "pull",
+    pulled,
+    synced: null
+  };
+}
+
+export async function refreshOnlineCache(
+  options: RunSyncOptions = {}
+): Promise<RefreshOnlineCacheResult> {
+  refreshOnlineCachePromise ??= refreshOnlineCacheNow(options).finally(() => {
+    refreshOnlineCachePromise = null;
+  });
+
+  return refreshOnlineCachePromise;
 }

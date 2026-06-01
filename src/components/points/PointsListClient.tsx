@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   AlertTriangle,
   Check,
@@ -13,13 +13,13 @@ import {
   UserPlus,
   WifiOff
 } from "lucide-react";
-import type { Change, Conflict, Owner, Point, PointStatus, Visit } from "@/lib/data-model/types";
-import { db } from "@/lib/indexeddb/db";
+import type { Change, Conflict, Owner, PointStatus, Visit } from "@/lib/data-model/types";
 import {
   addVisitLocal,
   createOwnerLocal,
   updatePointLocal
 } from "@/lib/sync/local-actions";
+import { useOnlineCachedSnapshot } from "@/lib/sync/use-online-cached-snapshot";
 import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
 import {
   createPointListItems,
@@ -30,23 +30,7 @@ import {
   type PointListItem
 } from "@/lib/points/list";
 
-type SyncState = "synced" | "pending" | "conflict" | "offline";
-
-interface ListState {
-  points: Point[];
-  owners: Owner[];
-  visits: Visit[];
-  pendingChanges: Change[];
-  conflicts: Conflict[];
-}
-
-const EMPTY_STATE: ListState = {
-  points: [],
-  owners: [],
-  visits: [],
-  pendingChanges: [],
-  conflicts: []
-};
+type SyncState = "synced" | "pending" | "conflict" | "offline" | "refreshing";
 
 const STATUS_OPTIONS: PointStatus[] = ["new", "active", "needs_review", "closed"];
 
@@ -54,29 +38,14 @@ const SYNC_LABELS: Record<SyncState, string> = {
   synced: "Синхр.",
   pending: "В очереди",
   conflict: "Конфликт",
-  offline: "Офлайн"
+  offline: "Офлайн",
+  refreshing: "Обновляю"
 };
 
 function sortOwners(owners: Owner[]): Owner[] {
   return [...owners].sort((left, right) =>
     left.name.localeCompare(right.name, "ru-RU", { sensitivity: "base" })
   );
-}
-
-async function readListState(): Promise<ListState> {
-  const [points, owners, visits, pendingChanges, conflicts] = await Promise.all([
-    db.points.filter((point) => point.deletedAt === null).toArray(),
-    db.owners.filter((owner) => owner.deletedAt === null).toArray(),
-    db.visits.filter((visit) => visit.deletedAt === null).toArray(),
-    db.changes
-      .filter((change) => change.deletedAt === null && change.syncedAt === null)
-      .toArray(),
-    db.conflicts
-      .filter((conflict) => conflict.deletedAt === null && conflict.resolvedAt === null)
-      .toArray()
-  ]);
-
-  return { points, owners, visits, pendingChanges, conflicts };
 }
 
 function changeTouchesPoint(change: Change, pointId: string): boolean {
@@ -112,16 +81,25 @@ function getPointSyncState(
   return "synced";
 }
 
-function getGlobalSyncState(state: ListState, isOnline: boolean): SyncState {
+function getGlobalSyncState(
+  pendingChanges: Change[],
+  conflicts: Conflict[],
+  isOnline: boolean,
+  isRefreshing: boolean
+): SyncState {
+  if (isRefreshing) {
+    return "refreshing";
+  }
+
   if (!isOnline) {
     return "offline";
   }
 
-  if (state.conflicts.length > 0) {
+  if (conflicts.length > 0) {
     return "conflict";
   }
 
-  if (state.pendingChanges.length > 0) {
+  if (pendingChanges.length > 0) {
     return "pending";
   }
 
@@ -160,7 +138,7 @@ function syncIcon(state: SyncState) {
     return <AlertTriangle size={14} aria-hidden="true" />;
   }
 
-  if (state === "pending") {
+  if (state === "pending" || state === "refreshing") {
     return <Clock3 size={14} aria-hidden="true" />;
   }
 
@@ -168,42 +146,20 @@ function syncIcon(state: SyncState) {
 }
 
 export default function PointsListClient() {
-  const [state, setState] = useState<ListState>(EMPTY_STATE);
+  const {
+    snapshot: state,
+    error: cacheError,
+    isOnline,
+    isLoadingCache,
+    isRefreshing,
+    refreshCache,
+    refreshOnline
+  } = useOnlineCachedSnapshot();
   const [search, setSearch] = useState("");
   const [noOwnerOnly, setNoOwnerOnly] = useState(false);
   const [brand, setBrand] = useState("");
   const [status, setStatus] = useState("");
-  const [isOnline, setIsOnline] = useState(true);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  const refresh = useCallback(async () => {
-    try {
-      setError(null);
-      setState(await readListState());
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось прочитать локальные данные.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    const loadTimer = window.setTimeout(() => {
-      setIsOnline(navigator.onLine);
-      void refresh();
-    }, 0);
-
-    const updateOnline = () => setIsOnline(navigator.onLine);
-    window.addEventListener("online", updateOnline);
-    window.addEventListener("offline", updateOnline);
-
-    return () => {
-      window.clearTimeout(loadTimer);
-      window.removeEventListener("online", updateOnline);
-      window.removeEventListener("offline", updateOnline);
-    };
-  }, [refresh]);
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   const items = useMemo(
     () => createPointListItems(state.points, state.owners),
@@ -222,15 +178,26 @@ export default function PointsListClient() {
       ),
     [brand, items, noOwnerOnly, search, status]
   );
-  const globalSyncState = getGlobalSyncState(state, isOnline);
+  const globalSyncState = getGlobalSyncState(
+    state.pendingChanges,
+    state.conflicts,
+    isOnline,
+    isRefreshing
+  );
+  const hasLocalRows = state.points.length > 0 || state.owners.length > 0 || state.visits.length > 0;
+  const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
+  const error = mutationError ?? cacheError;
 
   const runMutation = async (mutation: () => Promise<unknown>) => {
     try {
-      setError(null);
+      setMutationError(null);
       await mutation();
-      await refresh();
+      await refreshCache();
+      if (isOnline) {
+        void refreshOnline();
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось сохранить изменение.");
+      setMutationError(caught instanceof Error ? caught.message : "Не удалось сохранить изменение.");
     }
   };
 
@@ -368,10 +335,17 @@ export default function PointsListClient() {
 
       {error ? <div className="error-banner">{error}</div> : null}
 
-      {isLoading ? (
+      {isRefreshing && hasLocalRows ? <p className="lead">Обновляю онлайн-данные...</p> : null}
+
+      {isLoadingCache ? (
         <section className="card">
-          <h3>Загрузка локальных данных</h3>
+          <h3>Загрузка кэша</h3>
           <p>Читаю IndexedDB на устройстве.</p>
+        </section>
+      ) : isInitialOnlineLoad ? (
+        <section className="card">
+          <h3>Загружаю онлайн-данные</h3>
+          <p>Получаю актуальные ПВЗ и сохраняю их в IndexedDB.</p>
         </section>
       ) : filteredGroups.length === 0 ? (
         <section className="card">

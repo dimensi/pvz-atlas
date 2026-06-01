@@ -231,3 +231,5 @@ A task is done only when:
 ## ExecPlans
 
 For complex features, sync changes, data model changes, or architecture refactors, create an ExecPlan using `.agent/PLANS.md` before editing code. Keep the plan updated while working.
+
+For large features, create a dedicated git worktree under `.worktrees/` at the repository root and do the implementation there. Do not create sibling worktrees outside the project directory unless explicitly requested.

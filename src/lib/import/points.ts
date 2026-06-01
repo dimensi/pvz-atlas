@@ -74,6 +74,15 @@ export interface ImportPreviewOptions {
   idFactory: () => string;
 }
 
+export const MAX_IMPORT_POINT_ROWS = 1000;
+
+export class ImportValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ImportValidationError";
+  }
+}
+
 const importRowSchema = z.object({
   rowIndex: z.number().int().positive().optional(),
   brand: z.string().trim().min(1),
@@ -249,6 +258,22 @@ export function parseJsonImportPoints(input: unknown): { rows: ImportPointRow[];
   });
 
   return { rows, invalid };
+}
+
+export function assertImportPointRowCount(
+  rows: ImportPointRow[],
+  invalid: ImportInvalidItem[],
+  maxRows = MAX_IMPORT_POINT_ROWS
+): void {
+  const totalRows = rows.length + invalid.length;
+
+  if (totalRows === 0) {
+    throw new ImportValidationError("Import must include at least one point row.");
+  }
+
+  if (totalRows > maxRows) {
+    throw new ImportValidationError(`Import is limited to ${maxRows} point rows.`);
+  }
 }
 
 export function normalizeImportPoint(row: ImportPointRow, rowIndex: number): NormalizedImportPoint | ImportInvalidItem {

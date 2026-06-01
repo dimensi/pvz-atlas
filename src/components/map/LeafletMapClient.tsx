@@ -1,7 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
   CheckCircle2,
@@ -12,8 +12,7 @@ import {
   Navigation,
   X
 } from "lucide-react";
-import type { Change, Conflict, Owner, Point, PointStatus } from "@/lib/data-model/types";
-import { db } from "@/lib/indexeddb/db";
+import type { Change, Conflict, PointStatus } from "@/lib/data-model/types";
 import {
   createMapPointItems,
   DEFAULT_NEARBY_RADIUS_METERS,
@@ -24,6 +23,7 @@ import {
   type MapQuickFilter
 } from "@/lib/map/points";
 import { POINT_STATUS_LABELS } from "@/lib/points/list";
+import { useOnlineCachedSnapshot } from "@/lib/sync/use-online-cached-snapshot";
 import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
 
 const LeafletMapView = dynamic(() => import("./LeafletMapView"), {
@@ -31,21 +31,7 @@ const LeafletMapView = dynamic(() => import("./LeafletMapView"), {
   loading: () => <div className="map-canvas map-canvas-loading" />
 });
 
-type SyncState = "synced" | "pending" | "conflict" | "offline";
-
-interface MapState {
-  points: Point[];
-  owners: Owner[];
-  pendingChanges: Change[];
-  conflicts: Conflict[];
-}
-
-const EMPTY_STATE: MapState = {
-  points: [],
-  owners: [],
-  pendingChanges: [],
-  conflicts: []
-};
+type SyncState = "synced" | "pending" | "conflict" | "offline" | "refreshing";
 
 const STATUS_OPTIONS: PointStatus[] = ["new", "active", "needs_review", "closed"];
 
@@ -53,23 +39,9 @@ const SYNC_LABELS: Record<SyncState, string> = {
   synced: "Синхр.",
   pending: "В очереди",
   conflict: "Конфликт",
-  offline: "Офлайн"
+  offline: "Офлайн",
+  refreshing: "Обновляю"
 };
-
-async function readMapState(): Promise<MapState> {
-  const [points, owners, pendingChanges, conflicts] = await Promise.all([
-    db.points.filter((point) => point.deletedAt === null).toArray(),
-    db.owners.filter((owner) => owner.deletedAt === null).toArray(),
-    db.changes
-      .filter((change) => change.deletedAt === null && change.syncedAt === null)
-      .toArray(),
-    db.conflicts
-      .filter((conflict) => conflict.deletedAt === null && conflict.resolvedAt === null)
-      .toArray()
-  ]);
-
-  return { points, owners, pendingChanges, conflicts };
-}
 
 function statusClassName(status: PointStatus): string {
   return `point-status point-status-${status.replace("_", "-")}`;
@@ -80,23 +52,32 @@ function syncIcon(state: SyncState) {
     return <AlertTriangle size={14} aria-hidden="true" />;
   }
 
-  if (state === "pending") {
+  if (state === "pending" || state === "refreshing") {
     return <Clock3 size={14} aria-hidden="true" />;
   }
 
   return <CheckCircle2 size={14} aria-hidden="true" />;
 }
 
-function getGlobalSyncState(state: MapState, isOnline: boolean): SyncState {
+function getGlobalSyncState(
+  pendingChanges: Change[],
+  conflicts: Conflict[],
+  isOnline: boolean,
+  isRefreshing: boolean
+): SyncState {
+  if (isRefreshing) {
+    return "refreshing";
+  }
+
   if (!isOnline) {
     return "offline";
   }
 
-  if (state.conflicts.length > 0) {
+  if (conflicts.length > 0) {
     return "conflict";
   }
 
-  if (state.pendingChanges.length > 0) {
+  if (pendingChanges.length > 0) {
     return "pending";
   }
 
@@ -120,7 +101,13 @@ function formatDistance(value: number | null): string | null {
 }
 
 export default function LeafletMapClient() {
-  const [state, setState] = useState<MapState>(EMPTY_STATE);
+  const {
+    snapshot: state,
+    error,
+    isOnline,
+    isLoadingCache,
+    isRefreshing
+  } = useOnlineCachedSnapshot();
   const [mode, setMode] = useState<MapQuickFilter>("all");
   const [brand, setBrand] = useState("");
   const [status, setStatus] = useState("");
@@ -128,40 +115,16 @@ export default function LeafletMapClient() {
   const [userLocation, setUserLocation] = useState<GeoPoint | null>(null);
   const [isLocationSupported, setIsLocationSupported] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
-  const [isOnline, setIsOnline] = useState(true);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      setError(null);
-      setState(await readMapState());
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Не удалось прочитать локальные данные.");
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
-      setIsOnline(navigator.onLine);
       setIsLocationSupported("geolocation" in navigator);
-      void refresh();
     }, 0);
 
-    const updateOnline = () => setIsOnline(navigator.onLine);
-    window.addEventListener("online", updateOnline);
-    window.addEventListener("offline", updateOnline);
-
-    return () => {
-      window.clearTimeout(loadTimer);
-      window.removeEventListener("online", updateOnline);
-      window.removeEventListener("offline", updateOnline);
-    };
-  }, [refresh]);
+    return () => window.clearTimeout(loadTimer);
+  }, []);
 
   const allItems = useMemo(
     () => createMapPointItems(state.points, state.owners),
@@ -187,7 +150,14 @@ export default function LeafletMapClient() {
     () => filteredMarkers.find((item) => item.point.id === selectedPointId) ?? null,
     [filteredMarkers, selectedPointId]
   );
-  const globalSyncState = getGlobalSyncState(state, isOnline);
+  const globalSyncState = getGlobalSyncState(
+    state.pendingChanges,
+    state.conflicts,
+    isOnline,
+    isRefreshing
+  );
+  const hasLocalRows = state.points.length > 0 || state.owners.length > 0 || state.visits.length > 0;
+  const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
 
   const handleNearby = () => {
     if (mode === "nearby") {
@@ -286,6 +256,7 @@ export default function LeafletMapClient() {
 
       {error ? <div className="error-banner">{error}</div> : null}
       {locationError ? <div className="error-banner">{locationError}</div> : null}
+      {isRefreshing && hasLocalRows ? <p className="lead">Обновляю онлайн-данные...</p> : null}
 
       <section className="map-panel" aria-label="Карта ПВЗ">
         <div className="map-canvas">
@@ -297,11 +268,17 @@ export default function LeafletMapClient() {
             />
           ) : null}
         </div>
-        {isLoading ? (
+        {isLoadingCache ? (
           <div className="map-overlay">
             <Clock3 size={22} aria-hidden="true" />
-            <strong>Загрузка локальных данных</strong>
+            <strong>Загрузка кэша</strong>
             <span>Читаю IndexedDB на устройстве.</span>
+          </div>
+        ) : isInitialOnlineLoad ? (
+          <div className="map-overlay">
+            <Clock3 size={22} aria-hidden="true" />
+            <strong>Загружаю онлайн-данные</strong>
+            <span>Получаю актуальные ПВЗ и сохраняю их в IndexedDB.</span>
           </div>
         ) : coordinateSplit.withCoordinates.length === 0 ? (
           <div className="map-overlay">

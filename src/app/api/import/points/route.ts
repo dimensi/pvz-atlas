@@ -1,6 +1,12 @@
 import { z, ZodError } from "zod";
 import type { ImportApplyResponse, ImportPreviewResponse } from "@/lib/api/types";
-import { buildImportPreview, parseCsvImportPoints, parseJsonImportPoints } from "@/lib/import/points";
+import {
+  ImportValidationError,
+  assertImportPointRowCount,
+  buildImportPreview,
+  parseCsvImportPoints,
+  parseJsonImportPoints
+} from "@/lib/import/points";
 import { getSheetsSnapshot, invalidateSheetsSnapshot } from "@/lib/sheets/cache";
 import { GoogleSheetsConfigError } from "@/lib/sheets/google-client";
 import { writeSheetsChanges } from "@/lib/sheets/adapter";
@@ -91,6 +97,8 @@ async function parseImportBody(request: Request): Promise<ParsedImportBody> {
 export async function POST(request: Request) {
   try {
     const payload = await parseImportBody(request);
+    assertImportPointRowCount(payload.rows, payload.invalid);
+
     const snapshot = await getSheetsSnapshot();
     const preview = await buildImportPreview(payload.rows, snapshot.points, {
       clock: () => new Date().toISOString(),
@@ -153,6 +161,10 @@ export async function POST(request: Request) {
 
     if (error instanceof SyntaxError) {
       return jsonError(400, "invalid_json", "Тело запроса должно быть валидным JSON.");
+    }
+
+    if (error instanceof ImportValidationError) {
+      return jsonError(400, "invalid_import_request", error.message);
     }
 
     if (error instanceof GoogleSheetsConfigError) {

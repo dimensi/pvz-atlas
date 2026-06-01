@@ -323,6 +323,52 @@ Verification results:
 
 ---
 
+## Online-First Sync With IndexedDB Fallback
+
+### Goal
+Make List and Map usable without a manual Sync button: show IndexedDB cache immediately when present, refresh from online Sheets-backed API automatically when online, and keep local mutations instant while auto-syncing them in the background.
+
+### Current repo state
+`PointsListClient` and `LeafletMapClient` read directly from Dexie only. `runSync()` performs pull, push, pull, but it is only called by `SyncClient`. The current sync engine already preserves dirty local entities during pull and avoids re-pushing changes with unresolved conflicts.
+
+### Data and API impact
+No wire contract changes for `/api/sync/pull` or `/api/sync/push`. The browser still never talks to Google Sheets directly. IndexedDB remains the render source, but it becomes an online-refreshed cache rather than a manual-only data store.
+
+### Approach
+Add a shared client-side cached snapshot reader and a `refreshOnlineCache` single-flight sync helper. If no pushable local changes exist, auto refresh performs pull-only and writes the result to IndexedDB. If pushable local changes exist, auto refresh runs the full `runSync()` flow. Refactor List and Map to use the shared snapshot hook: read cache first, then online refresh, then re-read cache. Trigger auto refresh on screen open, network reconnect, and after local mutations.
+
+### Conflict and offline behavior
+Local mutations continue to write IndexedDB first and enqueue `Change` records. Offline mode keeps cached data and pending changes visible. Online refresh does not overwrite dirty local entities before conflict handling, and changes with unresolved conflicts are not pushed again until resolved.
+
+### UI behavior
+List and Map should distinguish cache loading from online refreshing. With cached data, show it immediately and display a small refreshing state. With no cache and online available, show an online loading state instead of an empty list/map. Sync screen remains as a forced sync/status screen, not the primary way to load data.
+
+### Tests
+Add unit coverage for pull-only refresh, full sync refresh with pending changes, snapshot reading with `lastPullServerTime`, and cache-first/online-refresh hook behavior. Keep existing sync dirty-entity and unresolved-conflict regressions.
+
+### Risks
+Multiple screens may try to refresh at the same time; mitigate with a module-level single-flight promise. Browser online status is advisory, so failed refreshes must keep cache visible and show a non-blocking error.
+
+### Rollback
+Revert the new snapshot/online refresh modules and restore List/Map to direct Dexie reads plus manual Sync button behavior. No data migration or API rollback is required.
+
+### Progress
+- [x] Add ExecPlan.
+- [x] Add cached snapshot reader and online refresh helper.
+- [x] Refactor List and Map to use online cache behavior.
+- [x] Update Sync copy and forced sync refresh behavior.
+- [x] Add tests.
+- [x] Run lint, typecheck, tests, and build.
+
+Verification results:
+- `npm run typecheck`: passed
+- `npx vitest run src/lib/sync/engine.test.ts src/lib/sync/cache.test.ts src/lib/sync/use-online-cached-snapshot.test.tsx src/lib/map/points.test.ts src/lib/import/points.test.ts`: passed, 5 files and 20 tests
+- `npm run lint`: passed
+- `npm test`: passed, 15 files and 56 tests
+- `npm run build`: passed
+
+---
+
 ## Leaflet OSM Map Without Geocoding
 
 ### Goal

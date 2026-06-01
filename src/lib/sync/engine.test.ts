@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { Change, Point } from "@/lib/data-model/types";
+import type { Change, Conflict, Point } from "@/lib/data-model/types";
 import type { PvzDatabase } from "@/lib/indexeddb/db";
 import type { PullResponse, PushResponse } from "@/lib/api/types";
-import { runSync } from "./engine";
+import { LAST_PULL_META_KEY, refreshOnlineCache, runSync } from "./engine";
 
 const now = "2026-01-02T03:04:05.000Z";
 const pushedAt = "2026-01-02T03:05:00.000Z";
@@ -49,13 +49,17 @@ class FakeTable<TItem extends object> {
   }
 }
 
-function createDatabase(change: Change): PvzDatabase {
+function createDatabase(options: {
+  changes?: Change[];
+  conflicts?: Conflict[];
+  points?: Point[];
+} = {}): PvzDatabase {
   return {
-    points: new FakeTable<Point>("id"),
+    points: new FakeTable<Point>("id", options.points ?? []),
     owners: new FakeTable("id"),
     visits: new FakeTable("id"),
-    conflicts: new FakeTable("id"),
-    changes: new FakeTable<Change>("id", [change]),
+    conflicts: new FakeTable<Conflict>("id", options.conflicts ?? []),
+    changes: new FakeTable<Change>("id", options.changes ?? []),
     meta: new FakeTable("key"),
     transaction: async (...args: unknown[]) => {
       const callback = args.at(-1);
@@ -103,7 +107,7 @@ const change: Change = {
 
 describe("runSync", () => {
   it("pulls, applies remote data, pushes queued changes through API clients, and pulls again", async () => {
-    const database = createDatabase(change);
+    const database = createDatabase({ changes: [change] });
     const firstPull: PullResponse = {
       serverTime: now,
       points: [point],
@@ -145,5 +149,176 @@ describe("runSync", () => {
       syncedAt: pushedAt,
       version: 2
     });
+  });
+
+  it("preserves locally dirty entities while applying pulls", async () => {
+    const localDirtyPoint = {
+      ...point,
+      ownerId: "owner-local",
+      version: 2,
+      updatedAt: "2026-01-02T03:04:30.000Z"
+    };
+    const remotePoint = { ...point, ownerId: null, version: 1 };
+    const database = createDatabase({
+      changes: [change],
+      points: [localDirtyPoint]
+    });
+    const firstPull: PullResponse = {
+      serverTime: now,
+      points: [remotePoint],
+      owners: [],
+      visits: [],
+      conflicts: []
+    };
+    const pushResponse: PushResponse = {
+      serverTime: pushedAt,
+      applied: ["change-1"],
+      rejected: [],
+      conflicts: [],
+      points: [{ ...localDirtyPoint, version: 3, updatedAt: pushedAt }]
+    };
+    const finalPull: PullResponse = {
+      serverTime: finalTime,
+      points: [{ ...localDirtyPoint, version: 3, updatedAt: pushedAt }],
+      owners: [],
+      visits: [],
+      conflicts: []
+    };
+    const api = {
+      pullSync: vi.fn().mockResolvedValueOnce(firstPull).mockResolvedValueOnce(finalPull),
+      pushSync: vi.fn().mockImplementation(async () => {
+        expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
+          id: "point-1",
+          ownerId: "owner-local",
+          version: 2
+        });
+        return pushResponse;
+      })
+    };
+
+    await runSync({ database, api, clientId: "client-1", since: null });
+
+    expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
+      id: "point-1",
+      ownerId: "owner-local",
+      version: 3
+    });
+  });
+
+  it("does not push pending changes that already have unresolved conflicts", async () => {
+    const conflict: Conflict = {
+      id: "conflict-1",
+      entityName: "point",
+      entityId: "point-1",
+      field: "ownerId",
+      localValue: "owner-1",
+      remoteValue: "owner-2",
+      baseVersion: 1,
+      remoteVersion: 2,
+      resolvedAt: null,
+      resolution: null,
+      createdAt: pushedAt,
+      updatedAt: pushedAt,
+      deletedAt: null,
+      version: 1
+    };
+    const database = createDatabase({
+      changes: [change],
+      conflicts: [conflict],
+      points: [{ ...point, ownerId: "owner-1" }]
+    });
+    const emptyPull: PullResponse = {
+      serverTime: now,
+      points: [{ ...point, ownerId: "owner-2", version: 2 }],
+      owners: [],
+      visits: [],
+      conflicts: [conflict]
+    };
+    const api = {
+      pullSync: vi.fn().mockResolvedValue(emptyPull),
+      pushSync: vi.fn()
+    };
+
+    const result = await runSync({ database, api, clientId: "client-1", since: null });
+
+    expect(api.pushSync).not.toHaveBeenCalled();
+    expect(result.pushed).toBeNull();
+    expect((database.changes as unknown as FakeTable<Change>).items[0]).toMatchObject({
+      id: "change-1",
+      syncedAt: null
+    });
+    expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
+      id: "point-1",
+      ownerId: "owner-1"
+    });
+  });
+});
+
+describe("refreshOnlineCache", () => {
+  it("pulls only when there are no pushable local changes", async () => {
+    const database = createDatabase();
+    const pulledPoint = { ...point, id: "remote-point", address: "Remote 1" };
+    const pullResponse: PullResponse = {
+      serverTime: finalTime,
+      points: [pulledPoint],
+      owners: [],
+      visits: [],
+      conflicts: []
+    };
+    const api = {
+      pullSync: vi.fn().mockResolvedValue(pullResponse),
+      pushSync: vi.fn()
+    };
+
+    const result = await refreshOnlineCache({ database, api, since: null });
+
+    expect(result).toMatchObject({ mode: "pull", pulled: pullResponse, synced: null });
+    expect(api.pullSync).toHaveBeenCalledOnce();
+    expect(api.pullSync).toHaveBeenCalledWith(null);
+    expect(api.pushSync).not.toHaveBeenCalled();
+    expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
+      id: "remote-point",
+      address: "Remote 1"
+    });
+    expect(await database.meta.get(LAST_PULL_META_KEY)).toMatchObject({
+      key: LAST_PULL_META_KEY,
+      value: finalTime
+    });
+  });
+
+  it("runs full sync when pushable local changes exist", async () => {
+    const database = createDatabase({ changes: [change] });
+    const firstPull: PullResponse = {
+      serverTime: now,
+      points: [point],
+      owners: [],
+      visits: [],
+      conflicts: []
+    };
+    const pushResponse: PushResponse = {
+      serverTime: pushedAt,
+      applied: ["change-1"],
+      rejected: [],
+      conflicts: [],
+      points: [{ ...point, ownerId: "owner-1", version: 2, updatedAt: pushedAt }]
+    };
+    const finalPull: PullResponse = {
+      serverTime: finalTime,
+      points: [],
+      owners: [],
+      visits: [],
+      conflicts: []
+    };
+    const api = {
+      pullSync: vi.fn().mockResolvedValueOnce(firstPull).mockResolvedValueOnce(finalPull),
+      pushSync: vi.fn().mockResolvedValue(pushResponse)
+    };
+
+    const result = await refreshOnlineCache({ database, api, clientId: "client-1", since: null });
+
+    expect(result.mode).toBe("sync");
+    expect(result.synced?.pendingChangeCount).toBe(1);
+    expect(api.pullSync).toHaveBeenCalledTimes(2);
+    expect(api.pushSync).toHaveBeenCalledWith({ clientId: "client-1", changes: [change] });
   });
 });

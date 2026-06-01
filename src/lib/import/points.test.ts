@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { Point } from "@/lib/data-model/types";
 import {
+  ImportValidationError,
+  MAX_IMPORT_POINT_ROWS,
+  assertImportPointRowCount,
   buildImportPreview,
   normalizeImportPoint,
   parseCsvImportPoints,
@@ -132,5 +135,20 @@ describe("point import pipeline", () => {
     expect(preview.warnings).toEqual([
       "Row 1: coordinates are missing; point will not appear on the map."
     ]);
+  });
+
+  it("rejects empty and oversized imports before preview work", () => {
+    expect(() => assertImportPointRowCount([], [])).toThrow(ImportValidationError);
+
+    const rows = Array.from({ length: MAX_IMPORT_POINT_ROWS + 1 }, (_, index) => ({
+      rowIndex: index + 1,
+      brand: "Ozon",
+      city: "Moscow",
+      address: `Main Street ${index + 1}`
+    }));
+
+    expect(() => assertImportPointRowCount(rows, [])).toThrow(
+      `Import is limited to ${MAX_IMPORT_POINT_ROWS} point rows.`
+    );
   });
 });
