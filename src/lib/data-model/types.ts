@@ -45,6 +45,7 @@ export interface Change extends SyncEntity {
   entityId: string;
   operation: ChangeOperation;
   baseVersion: number;
+  clientId: string;
   patch: Record<string, unknown>;
   syncedAt: string | null;
 }

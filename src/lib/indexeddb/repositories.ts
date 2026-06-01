@@ -20,6 +20,7 @@ type RepositoryOptions = {
   database?: PvzDatabase;
   clock?: Clock;
   idFactory?: IdFactory;
+  clientId?: string;
 };
 
 type PointMutableFields = Pick<
@@ -70,7 +71,8 @@ function repositoryContext(options: RepositoryOptions = {}) {
   return {
     database: options.database ?? db,
     clock: options.clock ?? defaultClock,
-    idFactory: options.idFactory ?? defaultIdFactory
+    idFactory: options.idFactory ?? defaultIdFactory,
+    clientId: options.clientId ?? "local"
   };
 }
 
@@ -78,7 +80,8 @@ function enqueueCreateChange<TEntity extends Point | Owner | Visit>(
   entityName: Change["entityName"],
   entity: TEntity,
   idFactory: IdFactory,
-  clock: Clock
+  clock: Clock,
+  clientId: string
 ): Change {
   return createChangeRecord(
     {
@@ -86,6 +89,7 @@ function enqueueCreateChange<TEntity extends Point | Owner | Visit>(
       entityId: entity.id,
       operation: "create",
       baseVersion: 0,
+      clientId,
       patch: entity as unknown as Record<string, unknown>
     },
     { idFactory, clock }
@@ -96,7 +100,7 @@ export async function createPoint(
   input: CreatePointInput,
   options: RepositoryOptions = {}
 ): Promise<Point> {
-  const { database, clock, idFactory } = repositoryContext(options);
+  const { database, clock, idFactory, clientId } = repositoryContext(options);
 
   return database.transaction("rw", database.points, database.changes, async () => {
     const now = clock();
@@ -118,7 +122,7 @@ export async function createPoint(
       deletedAt: null,
       version: 1
     };
-    const change = enqueueCreateChange("point", point, idFactory, () => now);
+    const change = enqueueCreateChange("point", point, idFactory, () => now, clientId);
 
     await database.points.add(point);
     await database.changes.add(change);
@@ -132,7 +136,7 @@ export async function updatePointPatch(
   patch: Partial<PointMutableFields>,
   options: RepositoryOptions = {}
 ): Promise<Point> {
-  const { database, clock, idFactory } = repositoryContext(options);
+  const { database, clock, idFactory, clientId } = repositoryContext(options);
 
   return database.transaction("rw", database.points, database.changes, async () => {
     const current = await database.points.get(pointId);
@@ -151,6 +155,7 @@ export async function updatePointPatch(
         entityId: pointId,
         operation: "update",
         baseVersion: current.version,
+        clientId,
         patch: changedPatch as Record<string, unknown>
       },
       { idFactory, clock: () => now }
@@ -175,7 +180,7 @@ export async function createOwner(
   input: CreateOwnerInput,
   options: RepositoryOptions = {}
 ): Promise<Owner> {
-  const { database, clock, idFactory } = repositoryContext(options);
+  const { database, clock, idFactory, clientId } = repositoryContext(options);
 
   return database.transaction("rw", database.owners, database.changes, async () => {
     const now = clock();
@@ -190,7 +195,7 @@ export async function createOwner(
       deletedAt: null,
       version: 1
     };
-    const change = enqueueCreateChange("owner", owner, idFactory, () => now);
+    const change = enqueueCreateChange("owner", owner, idFactory, () => now, clientId);
 
     await database.owners.add(owner);
     await database.changes.add(change);
@@ -204,7 +209,7 @@ export async function updateOwnerPatch(
   patch: Partial<OwnerMutableFields>,
   options: RepositoryOptions = {}
 ): Promise<Owner> {
-  const { database, clock, idFactory } = repositoryContext(options);
+  const { database, clock, idFactory, clientId } = repositoryContext(options);
 
   return database.transaction("rw", database.owners, database.changes, async () => {
     const current = await database.owners.get(ownerId);
@@ -223,6 +228,7 @@ export async function updateOwnerPatch(
         entityId: ownerId,
         operation: "update",
         baseVersion: current.version,
+        clientId,
         patch: changedPatch as Record<string, unknown>
       },
       { idFactory, clock: () => now }
@@ -239,7 +245,7 @@ export async function markPointVisited(
   input: MarkPointVisitedInput,
   options: RepositoryOptions = {}
 ): Promise<Visit> {
-  const { database, clock, idFactory } = repositoryContext(options);
+  const { database, clock, idFactory, clientId } = repositoryContext(options);
 
   return database.transaction("rw", database.points, database.visits, database.changes, async () => {
     const point = await database.points.get(input.pointId);
@@ -259,7 +265,7 @@ export async function markPointVisited(
       deletedAt: null,
       version: 1
     };
-    const change = enqueueCreateChange("visit", visit, idFactory, () => now);
+    const change = enqueueCreateChange("visit", visit, idFactory, () => now, clientId);
 
     await database.visits.add(visit);
     await database.changes.add(change);
@@ -273,7 +279,7 @@ export async function updateVisitPatch(
   patch: Partial<VisitMutableFields>,
   options: RepositoryOptions = {}
 ): Promise<Visit> {
-  const { database, clock, idFactory } = repositoryContext(options);
+  const { database, clock, idFactory, clientId } = repositoryContext(options);
 
   return database.transaction("rw", database.visits, database.changes, async () => {
     const current = await database.visits.get(visitId);
@@ -292,6 +298,7 @@ export async function updateVisitPatch(
         entityId: visitId,
         operation: "update",
         baseVersion: current.version,
+        clientId,
         patch: changedPatch as Record<string, unknown>
       },
       { idFactory, clock: () => now }

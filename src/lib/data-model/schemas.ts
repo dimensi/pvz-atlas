@@ -50,6 +50,7 @@ export const changeSchema = syncEntitySchema.extend({
   entityId: z.string().min(1),
   operation: z.enum(["create", "update", "delete"]),
   baseVersion: z.number().int().nonnegative(),
+  clientId: z.string().min(1),
   patch: z.record(z.string(), z.unknown()),
   syncedAt: isoDate.nullable()
 });

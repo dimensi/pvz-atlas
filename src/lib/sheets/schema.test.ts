@@ -65,6 +65,7 @@ const change: Change = {
   entityId: "point-1",
   operation: "update",
   baseVersion: 3,
+  clientId: "client-1",
   patch: { ownerId: "owner-1" },
   syncedAt: null,
   createdAt: now,
@@ -96,6 +97,7 @@ describe("Sheets schema", () => {
     expect(SHEET_COLUMNS.owners).toContain("telegram");
     expect(SHEET_COLUMNS.visits).toContain("point_id");
     expect(SHEET_COLUMNS.changesLog).toContain("base_version");
+    expect(SHEET_COLUMNS.changesLog).toContain("client_id");
     expect(SHEET_COLUMNS.conflicts).toContain("remote_version");
   });
 
@@ -138,6 +140,7 @@ describe("Sheets schema", () => {
 
     expect(row.patch).toBe(JSON.stringify(change.patch));
     expect(row.base_version).toBe("3");
+    expect(row.client_id).toBe("client-1");
 
     const parsed = parseChangeRow(row);
 

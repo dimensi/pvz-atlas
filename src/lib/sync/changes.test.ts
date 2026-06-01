@@ -37,6 +37,7 @@ describe("sync change helpers", () => {
         entityId: "point-1",
         operation: "update",
         baseVersion: 3,
+        clientId: "client-1",
         patch: { ownerId: "owner-1" }
       },
       {
@@ -51,6 +52,7 @@ describe("sync change helpers", () => {
       entityId: "point-1",
       operation: "update",
       baseVersion: 3,
+      clientId: "client-1",
       patch: { ownerId: "owner-1" },
       syncedAt: null,
       createdAt: now,
@@ -90,6 +92,7 @@ describe("sync change helpers", () => {
         entityId: "point-1",
         operation: "update",
         baseVersion: 3,
+        clientId: "client-1",
         patch: { ownerId: "owner-1" }
       },
       {

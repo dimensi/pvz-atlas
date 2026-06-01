@@ -19,6 +19,7 @@ export interface CreateChangeInput {
   operation: ChangeOperation;
   patch: Record<string, unknown>;
   baseVersion: number;
+  clientId: string;
 }
 
 export function createChangeRecord(
@@ -36,6 +37,7 @@ export function createChangeRecord(
     entityId: input.entityId,
     operation: input.operation,
     baseVersion: input.baseVersion,
+    clientId: input.clientId,
     patch: input.patch,
     syncedAt: null,
     createdAt: now,

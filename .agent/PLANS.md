@@ -122,3 +122,65 @@ Remove the new IndexedDB repository and sync helper modules, revert the Dexie sc
 - [x] Add Dexie tables and repository functions.
 - [x] Add unit tests for change creation and patch logic.
 - [x] Run lint, typecheck, tests, and build.
+
+---
+
+## Next.js API Google Sheets Sync Backend
+
+### Goal
+Implement a minimal server-only Google Sheets backend for pull/push sync, with a cached remote snapshot, version-checked patch application, conflict reporting, and typed Next.js API responses.
+
+### Current repo state
+The repo already has Next.js App Router route placeholders at `src/app/api/sync/pull/route.ts` and `src/app/api/sync/push/route.ts`. Data model types and Zod schemas exist in `src/lib/data-model`. Sync request/response contracts exist in `src/lib/sync/contracts.ts`. Sheet row codecs and column definitions already exist in `src/lib/sheets/schema.ts`, including parse/serialize helpers and tests.
+
+### Data and API impact
+Affected endpoints:
+- `GET /api/sync/pull?since=...`
+- `POST /api/sync/push`
+
+Affected sheets:
+- `points`
+- `owners`
+- `visits`
+- `changes_log`
+- `conflicts`
+
+Push accepts a client-scoped batch of `Change` records. The existing schema does not include per-field base values, so field-level merge can only be conservative when `remote.version !== change.baseVersion`: if a patched field already equals the local value it can be accepted as already applied; if a patched field differs remotely, a conflict is created instead of overwriting a possible manual Sheets edit.
+
+### Approach
+Add a server-only Sheets client that uses environment variables for service-account credentials and the Sheets REST API. Add a Sheets adapter that reads all sync sheets, validates rows through existing codecs, updates records by stable `id`, appends change/conflict logs, and never treats row numbers as entity IDs. Add an in-memory snapshot cache with TTL and invalidation after writes. Add pure sync application helpers for create, update, delete, version checks, conservative merge/conflict behavior, and tests. Wire the pull and push route handlers through Zod request/response validation.
+
+### Conflict and offline behavior
+Offline UI behavior remains local-first: browser mutations enqueue `Change` records in IndexedDB and push later. Push applies create records as full new entities when the remote entity does not exist. Updates/deletes apply only when `baseVersion` matches the remote `version`. If Google Sheets was manually edited and the version changed, the server will not blindly overwrite patched fields; differing patched fields become `Conflict` records and successful independent/no-op fields can still be accepted where provable from the current remote snapshot.
+
+### UI behavior
+No mobile UI changes in this task. The Sync tab can later display `acceptedChangeIds`, returned `conflicts`, and `warnings` from malformed Sheets rows or unavailable configuration.
+
+### Tests
+Add Vitest coverage for pure server sync logic:
+- direct version match applies a patch and increments version;
+- version mismatch with same field difference creates a conflict;
+- remote value already equal to local patch is accepted;
+- create inserts a new record;
+- delete marks `deletedAt` and increments version.
+
+Run `npm run lint`, `npm run typecheck`, `npm test`, and `npm run build`.
+
+### Risks
+The largest behavioral risk is field-level merge without base field values. Mitigate by being conservative on version mismatch and documenting the limitation. The integration risk is Google service-account authentication without adding production dependencies; keep it isolated in a small server module and return structured configuration errors.
+
+### Rollback
+Revert the new server Sheets adapter/cache/sync modules and restore the two sync route placeholders. Existing client IndexedDB and sheet schema modules can remain unchanged.
+
+### Progress
+- [x] Inspect prompt, project rules, existing sync contracts, route stubs, and Sheets codecs.
+- [x] Add pure server sync apply logic and tests.
+- [x] Add server-only Google Sheets adapter and snapshot cache.
+- [x] Wire pull and push routes with Zod validation.
+- [x] Run verification commands and update this plan with results.
+
+Verification results:
+- `npm run lint`: passed
+- `npm run typecheck`: passed
+- `npm test`: passed, 5 files and 21 tests
+- `npm run build`: passed

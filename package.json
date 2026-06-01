@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "dexie": "^4.4.3",
+    "google-auth-library": "^10.6.2",
     "lucide-react": "^1.17.0",
     "next": "^16.2.6",
     "react": "^19.2.6",
