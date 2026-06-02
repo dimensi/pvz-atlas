@@ -50,6 +50,59 @@ Maintain a checklist while implementing.
 
 ---
 
+## Branded Leaflet Map Pins
+
+### Goal
+Show mobile-readable PVZ map pins styled by `point.brand`, using a local full-pin image for Ozon, local logo pins for Yandex Market, Wildberries, CDEK, and 5Post, and branded vector fallback pins for unknown brands.
+
+### Current repo state
+The `/map` route renders `LeafletMapClient`, which reads local cached points, filters mappable coordinates, and passes markers into `LeafletMapView`. `LeafletMapView` currently creates status-only Leaflet `divIcon`s with small dot CSS in `src/app/globals.css`. Brand canonicalization already exists in `src/lib/brands.ts`; the data model has `Point.brand` as a string and no separate PVZ type field. The repo has a user-added `pin-ozon.svg` at the root.
+
+### Data and API impact
+No data model, IndexedDB, sync engine, API routes, Google Sheets schema, import logic, or environment variables change. Marker style is derived from existing `point.brand` with `canonicalizeBrand`; unknown brands fall back to `other` visual styling while preserving stored/displayed brand text.
+
+### Approach
+Add a pure map marker style helper that maps known canonical brands to controlled classes, glyphs, local asset URLs, and inline SVG pin body colors. Move the Ozon pin asset into `public/map-pins/`, use user-provided WB/CDEK logos, and add a local Yandex Market logo asset based on the supplied logo. Update `LeafletMapView` to create per-brand/status `divIcon`s with static controlled HTML. Use one-piece 45x65 vector pin bodies for logo/fallback pins so tails do not distort.
+
+### Conflict and offline behavior
+This is display-only. Offline behavior is unchanged: the map still renders from local cached IndexedDB snapshot data, and no changes enter the local change queue. Existing sync pull/push/conflict behavior is unaffected.
+
+### UI behavior
+On mobile and desktop, markers use recognizable brand visuals. Ozon uses the supplied full-pin asset. Yandex Market, Wildberries, CDEK, and 5Post use local logo assets inside a unified vector pin body. Unknown/other points use color vector pins with short glyph labels. Clicking a marker keeps the existing bottom drawer behavior and route/edit actions. Status remains visible as a secondary accent.
+
+### Tests
+Add unit tests for marker style mapping: Ozon aliases, Yandex Market aliases, WB/Wildberries, СДЭК, 5Post, and unknown fallback. Run targeted map/brand tests plus lint and typecheck. Smoke-test `/map` in the browser at mobile and desktop sizes.
+
+### Risks
+Leaflet `divIcon` accepts HTML strings, so marker HTML must only use controlled helper output and not interpolate raw stored brand values. Asset path mistakes can make pins blank; cover with helper tests and browser smoke. Large markers can overlap more than the old dots; keep anchors and dimensions stable.
+
+### Rollback
+Restore the old status-only `LeafletMapView` icon factory and marker CSS, remove `src/lib/map/marker-style.ts`, its tests, and `public/map-pins/`. No data rollback is required.
+
+### Progress
+- [x] Read project instructions and run `code_mapper`.
+- [x] Decide the visual variant: local logo/image pins for Ozon and Yandex Market, color fallback pins for others.
+- [x] Add marker style helper and tests.
+- [x] Add local map pin assets.
+- [x] Update Leaflet marker rendering and CSS.
+- [x] Run tests, lint, typecheck, and browser smoke.
+- [ ] Run map, mobile UI, and test hardening reviewers.
+
+Verification results:
+- `npm test -- src/lib/brands.test.ts src/lib/map/points.test.ts src/lib/map/marker-style.test.ts`: passed, 3 files and 12 tests.
+- `npm test -- src/lib/brands.test.ts src/lib/map/marker-style.test.ts src/components/pwa/service-worker.test.ts`: passed, 3 files and 13 tests after the logo-pin refactor.
+- `npm test`: passed, 23 files and 87 tests.
+- `npm run typecheck`: passed.
+- `npm run lint`: passed.
+- `npm run build`: passed.
+- Browser smoke on existing dev server `http://localhost:3000/map`: desktop 1280x720 rendered 24 markers using local 45x65 image pins and marker click opened the existing drawer; mobile 390x844 rendered 24 visible 45x65 markers with no horizontal overflow.
+- Browser visual check after logo-pin refactor: map rendered Ozon, WB, Yandex Market, CDEK, and 5Post marker classes; WB/CDEK/Market/5Post use one-piece inline SVG pin bodies instead of the earlier CSS circle-plus-tail shape.
+- `map_cost_reviewer`: no blockers; noted the new SVG pins should be precached for offline field use, so local `/map-pins/*.svg` marker assets were added to `public/sw.js` and cache name was bumped to `pvz-atlas-v2`.
+- `test_hardening_reviewer`: no blockers; noted actual `divIcon` output was not directly asserted, so controlled marker class/html builders were added and tested.
+- `mobile_ui_reviewer`: found a blocker where stored `fivepost` fell back to `other`; fixed by adding the `fivepost` alias, adding tests, increasing map padding, adding marker `aria-label`/`role`/`tabindex` and keyboard handling, integrating the status dot inside the pin head, and adding safe-area bottom padding.
+
+---
+
 ## Mobile Accessible Edit Flows Without Native Prompts
 
 ### Goal

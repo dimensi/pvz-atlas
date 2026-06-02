@@ -15,6 +15,7 @@ const BRAND_ALIASES: Record<string, BrandId> = {
   "5 post": "fivepost",
   "5-post": "fivepost",
   "5post": "fivepost",
+  fivepost: "fivepost",
   cdek: "cdek",
   "сдек": "cdek",
   "сдэк": "cdek",
@@ -51,6 +52,10 @@ export function getBrandLabel(value: string | null | undefined): string {
   }
 
   return (value ?? "").trim();
+}
+
+export function getBrandPillClassName(value: string | null | undefined): string {
+  return `brand-pill brand-pill-${canonicalizeBrand(value) ?? "other"}`;
 }
 
 export function getStoredBrand(value: BrandId): string {

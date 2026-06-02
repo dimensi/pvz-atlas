@@ -566,40 +566,60 @@ select {
 }
 
 .map-marker {
+  position: relative;
   width: 22px;
-  height: 22px;
-  display: grid;
-  place-items: center;
-  border: 2px solid #ffffff;
-  border-radius: 999px;
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.22);
+  height: 33px;
+  display: block;
+  background: transparent;
+  border: 0;
+  --marker-status-filter: drop-shadow(0 1px 0 #64748b) drop-shadow(1px 0 0 #64748b) drop-shadow(0 -1px 0 #64748b) drop-shadow(-1px 0 0 #64748b);
 }
 
-.map-marker span {
-  width: 10px;
-  height: 10px;
-  border-radius: 999px;
-  background: currentColor;
+.map-marker-pin {
+  position: relative;
+  width: 22px;
+  height: 33px;
+  display: block;
 }
 
-.map-marker-new {
-  color: #64748b;
-  background: #f8fafc;
+.map-marker-with-image .map-marker-pin img {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 33px;
+  display: block;
+  filter:
+    var(--marker-status-filter)
+    drop-shadow(0 8px 16px rgba(15, 23, 42, 0.24));
+  user-select: none;
 }
 
-.map-marker-active {
-  color: #0f766e;
-  background: #ccfbf1;
+.map-marker-vector-pin {
+  position: relative;
+  z-index: 1;
+  width: 22px;
+  height: 33px;
+  display: block;
+  overflow: visible;
+  filter:
+    var(--marker-status-filter)
+    drop-shadow(0 8px 16px rgba(15, 23, 42, 0.24));
 }
 
-.map-marker-needs-review {
-  color: #b45309;
-  background: #fef3c7;
+.map-marker-status-new {
+  --marker-status-filter: drop-shadow(0 1px 0 #64748b) drop-shadow(1px 0 0 #64748b) drop-shadow(0 -1px 0 #64748b) drop-shadow(-1px 0 0 #64748b);
 }
 
-.map-marker-closed {
-  color: #475569;
-  background: #e2e8f0;
+.map-marker-status-active {
+  --marker-status-filter: drop-shadow(0 1px 0 #0f766e) drop-shadow(1px 0 0 #0f766e) drop-shadow(0 -1px 0 #0f766e) drop-shadow(-1px 0 0 #0f766e);
+}
+
+.map-marker-status-needs-review {
+  --marker-status-filter: drop-shadow(0 1px 0 #dc2626) drop-shadow(1px 0 0 #dc2626) drop-shadow(0 -1px 0 #dc2626) drop-shadow(-1px 0 0 #dc2626);
+}
+
+.map-marker-status-closed {
+  --marker-status-filter: drop-shadow(0 1px 0 #334155) drop-shadow(1px 0 0 #334155) drop-shadow(0 -1px 0 #334155) drop-shadow(-1px 0 0 #334155);
 }
 
 .map-overlay {
@@ -805,6 +825,10 @@ select {
 .marker-drawer-content [data-slot="drawer-header"],
 .marker-drawer-content .map-marker-details {
   flex: 0 0 auto;
+}
+
+.marker-drawer-content .map-marker-details {
+  padding-bottom: calc(16px + env(safe-area-inset-bottom));
 }
 
 .map-marker-details h3 {
@@ -1032,6 +1056,36 @@ select {
 .brand-pill {
   background: #e6efff;
   color: #1d4ed8;
+}
+
+.brand-pill-ozon {
+  background: #005bff;
+  color: #ffffff;
+}
+
+.brand-pill-wildberries {
+  background: #cb11ab;
+  color: #ffffff;
+}
+
+.brand-pill-yandex_market {
+  background: #ff3d10;
+  color: #ffe500;
+}
+
+.brand-pill-cdek {
+  background: #e7f8ed;
+  color: #008f33;
+}
+
+.brand-pill-fivepost {
+  background: #565656;
+  color: #ffffff;
+}
+
+.brand-pill-other {
+  background: #edf2f7;
+  color: #475569;
 }
 
 .point-status-new {

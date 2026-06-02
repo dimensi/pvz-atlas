@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { Check, MapPinned, MoreHorizontal, Search, UserPlus } from "lucide-react";
 import { toast } from "sonner";
-import { getBrandLabel } from "@/lib/brands";
+import { getBrandLabel, getBrandPillClassName } from "@/lib/brands";
 import type { PointStatus, Visit } from "@/lib/data-model/types";
 import { getPointCoordinates } from "@/lib/map/points";
 import { addVisitLocal, removeVisitLocal } from "@/lib/sync/local-actions";
@@ -264,7 +264,9 @@ export default function PointsListClient() {
                     <div className="point-card-main">
                       <div>
                         <div className="point-meta-row">
-                          <span className="brand-pill">{getBrandLabel(item.point.brand)}</span>
+                          <span className={getBrandPillClassName(item.point.brand)}>
+                            {getBrandLabel(item.point.brand)}
+                          </span>
                           {item.point.status !== "new" ? (
                             <span className={statusClassName(item.point.status)}>
                               {POINT_STATUS_LABELS[item.point.status]}

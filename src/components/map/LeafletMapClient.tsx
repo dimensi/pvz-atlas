@@ -15,7 +15,7 @@ import {
   UserPlus
 } from "lucide-react";
 import { toast } from "sonner";
-import { getBrandLabel } from "@/lib/brands";
+import { getBrandLabel, getBrandPillClassName } from "@/lib/brands";
 import type { PointStatus } from "@/lib/data-model/types";
 import { PointActionDialogs, type PointAction, type PointActionItem } from "@/components/points/PointActionDialogs";
 import { SyncHealthIndicator } from "@/components/sync/SyncHealthIndicator";
@@ -323,7 +323,9 @@ export default function LeafletMapClient() {
           <div className="missing-coordinate-list">
             {coordinateSplit.withoutCoordinates.slice(0, 6).map((item) => (
               <article className="missing-coordinate-item" key={item.point.id}>
-                <span className="brand-pill">{getBrandLabel(item.point.brand)}</span>
+                <span className={getBrandPillClassName(item.point.brand)}>
+                  {getBrandLabel(item.point.brand)}
+                </span>
                 <div>
                   <strong>{item.point.address}</strong>
                   <span>{item.point.city}</span>
@@ -354,7 +356,9 @@ export default function LeafletMapClient() {
           {selectedItem ? (
             <div className="map-marker-details">
               <div className="point-meta-row">
-                <span className="brand-pill">{getBrandLabel(selectedItem.point.brand)}</span>
+                <span className={getBrandPillClassName(selectedItem.point.brand)}>
+                  {getBrandLabel(selectedItem.point.brand)}
+                </span>
                 <span className={statusClassName(selectedItem.point.status)}>
                   {POINT_STATUS_LABELS[selectedItem.point.status]}
                 </span>

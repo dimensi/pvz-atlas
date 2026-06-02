@@ -1,11 +1,12 @@
 "use client";
 
 import { useEffect, useMemo } from "react";
-import { divIcon, latLngBounds, type LatLngExpression } from "leaflet";
+import { divIcon, latLngBounds, type LatLngExpression, type Marker as LeafletMarker } from "leaflet";
 import { MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import { getBrandLabel } from "@/lib/brands";
-import type { PointStatus } from "@/lib/data-model/types";
+import { getMapMarkerClassName, getMapMarkerHtml } from "@/lib/map/marker-style";
 import type { MappablePointItem } from "@/lib/map/points";
+import { POINT_STATUS_LABELS } from "@/lib/points/list";
 
 interface LeafletMapViewProps {
   markers: MappablePointItem[];
@@ -20,23 +21,16 @@ const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const OSM_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
 
-const STATUS_MARKER_CLASSES: Record<PointStatus, string> = {
-  new: "map-marker-new",
-  active: "map-marker-active",
-  needs_review: "map-marker-needs-review",
-  closed: "map-marker-closed"
-};
-
 function markerPosition(item: MappablePointItem): LatLngExpression {
   return [item.coordinates.lat, item.coordinates.lon];
 }
 
-function createStatusIcon(status: PointStatus) {
+function createBrandIcon(item: MappablePointItem) {
   return divIcon({
-    className: `map-marker ${STATUS_MARKER_CLASSES[status]}`,
-    html: "<span></span>",
-    iconSize: [22, 22],
-    iconAnchor: [11, 11]
+    className: getMapMarkerClassName(item.point.brand, item.point.status),
+    html: getMapMarkerHtml(item.point.brand),
+    iconSize: [22, 33],
+    iconAnchor: [11, 32]
   });
 }
 
@@ -58,7 +52,7 @@ function MapViewportController({ markers }: { markers: MappablePointItem[] }) {
     map.fitBounds(bounds, {
       animate: true,
       maxZoom: SINGLE_MARKER_ZOOM,
-      padding: [32, 32]
+      padding: [24, 36]
     });
   }, [map, markers]);
 
@@ -70,15 +64,36 @@ export default function LeafletMapView({
   onMarkerSelect,
   onTileError
 }: LeafletMapViewProps) {
-  const markerIcons = useMemo(
-    () => ({
-      new: createStatusIcon("new"),
-      active: createStatusIcon("active"),
-      needs_review: createStatusIcon("needs_review"),
-      closed: createStatusIcon("closed")
-    }),
-    []
-  );
+  const markerIcons = useMemo(() => {
+    const iconsByPointId = new Map<string, ReturnType<typeof createBrandIcon>>();
+
+    for (const item of markers) {
+      iconsByPointId.set(item.point.id, createBrandIcon(item));
+    }
+
+    return iconsByPointId;
+  }, [markers]);
+
+  const setMarkerAccessibility = (
+    marker: LeafletMarker,
+    item: MappablePointItem
+  ) => {
+    const element = marker.getElement();
+    if (!element) {
+      return;
+    }
+
+    const label = `${getBrandLabel(item.point.brand)}: ${item.point.address}, ${POINT_STATUS_LABELS[item.point.status]}`;
+    element.setAttribute("aria-label", label);
+    element.setAttribute("role", "button");
+    element.setAttribute("tabindex", "0");
+    element.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" || event.key === " ") {
+        event.preventDefault();
+        onMarkerSelect(item.point.id);
+      }
+    });
+  };
 
   return (
     <MapContainer
@@ -96,8 +111,11 @@ export default function LeafletMapView({
       <MapViewportController markers={markers} />
       {markers.map((item) => (
         <Marker
-          eventHandlers={{ click: () => onMarkerSelect(item.point.id) }}
-          icon={markerIcons[item.point.status]}
+          eventHandlers={{
+            add: (event) => setMarkerAccessibility(event.target as LeafletMarker, item),
+            click: () => onMarkerSelect(item.point.id)
+          }}
+          icon={markerIcons.get(item.point.id)}
           key={item.point.id}
           position={markerPosition(item)}
           title={`${getBrandLabel(item.point.brand)}: ${item.point.address}`}

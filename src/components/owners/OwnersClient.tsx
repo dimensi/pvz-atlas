@@ -6,7 +6,7 @@ import { toast } from "sonner";
 import type { Owner, Point } from "@/lib/data-model/types";
 import { createOwnerLocal, updateOwnerLocal } from "@/lib/sync/local-actions";
 import { useOnlineCachedSnapshot } from "@/lib/sync/use-online-cached-snapshot";
-import { getBrandLabel } from "@/lib/brands";
+import { getBrandLabel, getBrandPillClassName } from "@/lib/brands";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -419,7 +419,9 @@ export default function OwnersClient() {
                   {activeOwnerPoints.length > 0 ? (
                     activeOwnerPoints.map((point) => (
                       <article className="missing-coordinate-item" key={point.id}>
-                        <span className="brand-pill">{getBrandLabel(point.brand)}</span>
+                        <span className={getBrandPillClassName(point.brand)}>
+                          {getBrandLabel(point.brand)}
+                        </span>
                         <div>
                           <strong>{point.address}</strong>
                           <span>{point.city}</span>
