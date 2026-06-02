@@ -29,14 +29,32 @@ describe("point coordinate input parsing", () => {
     });
   });
 
-  it("accepts map urls with ll as lon,lat and q as lat,lon", () => {
+  it("accepts map urls with known coordinate parameters", () => {
     expect(parsePointCoordinatesText("https://example.test/maps?ll=37.123,55.123&z=16")).toEqual({
       ok: true,
       coordinates: { lat: 55.123, lon: 37.123 }
     });
+    expect(parsePointCoordinatesText("https://example.test/maps?pt=37.321,55.321,pm2")).toEqual({
+      ok: true,
+      coordinates: { lat: 55.321, lon: 37.321 }
+    });
     expect(parsePointCoordinatesText("https://example.test/search?q=55.987,37.987")).toEqual({
       ok: true,
       coordinates: { lat: 55.987, lon: 37.987 }
+    });
+    expect(parsePointCoordinatesText("https://example.test/maps?api=1&query=55.123,37.123")).toEqual({
+      ok: true,
+      coordinates: { lat: 55.123, lon: 37.123 }
+    });
+    expect(parsePointCoordinatesText("https://example.test/maps?text=55.123%2C37.123")).toEqual({
+      ok: true,
+      coordinates: { lat: 55.123, lon: 37.123 }
+    });
+  });
+
+  it("rejects urls without known coordinate parameters instead of scraping arbitrary numbers", () => {
+    expect(parsePointCoordinatesText("https://example.test/maps?api=1&z=55.123")).toMatchObject({
+      ok: false
     });
   });
 });

@@ -7,11 +7,13 @@ import {
   BRAND_OPTIONS,
   canonicalizeBrand,
   getBrandLabel,
+  getBrandPillClassName,
   getStoredBrand,
   type BrandId
 } from "@/lib/brands";
 import { normalizeAddressPart } from "@/lib/data-model/source-key";
 import { createOwnerLocal, updatePointLocal } from "@/lib/sync/local-actions";
+import { parsePointCoordinatesText } from "@/lib/points/coordinates";
 import { POINT_STATUS_LABELS } from "@/lib/points/list";
 import {
   AlertDialog,
@@ -67,6 +69,7 @@ interface ActionFormProps {
 
 const STATUS_OPTIONS: PointStatus[] = ["new", "active", "needs_review", "closed"];
 const OWNER_NONE_VALUE = "__none__";
+const COORDINATE_ERROR_ID = "point-coordinates-edit-error";
 
 function sortOwners(owners: Owner[]): Owner[] {
   return [...owners].sort((left, right) =>
@@ -76,6 +79,14 @@ function sortOwners(owners: Owner[]): Owner[] {
 
 function normalize(value: string): string {
   return value.trim().toLocaleLowerCase("ru-RU");
+}
+
+function formatCoordinateInput(point: Pick<Point, "lat" | "lon">): string {
+  if (point.lat === null && point.lon === null) {
+    return "";
+  }
+
+  return `${point.lat ?? ""}, ${point.lon ?? ""}`;
 }
 
 function Field({
@@ -186,7 +197,10 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
   const [status, setStatus] = useState<PointStatus>(item.point.status);
   const [ownerId, setOwnerId] = useState(item.point.ownerId ?? OWNER_NONE_VALUE);
   const [comment, setComment] = useState(item.point.comment ?? "");
+  const [coordinates, setCoordinates] = useState(formatCoordinateInput(item.point));
+  const [coordinatesTouched, setCoordinatesTouched] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [coordinateValidationError, setCoordinateValidationError] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const sortedOwners = useMemo(() => sortOwners(owners), [owners]);
 
@@ -198,11 +212,22 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
     const nextAddress = address.trim();
     const nextComment = comment.trim() || null;
     const nextOwnerId = ownerId === OWNER_NONE_VALUE ? null : ownerId;
+    const parsedCoordinates = coordinatesTouched ? parsePointCoordinatesText(coordinates) : null;
 
     if (!nextBrand || !nextCity || !nextAddress) {
       setValidationError("Заполните бренд, город и адрес.");
+      setCoordinateValidationError(false);
       return;
     }
+
+    if (parsedCoordinates && !parsedCoordinates.ok) {
+      setValidationError(parsedCoordinates.message);
+      setCoordinateValidationError(true);
+      return;
+    }
+
+    const nextLat = parsedCoordinates?.coordinates?.lat ?? null;
+    const nextLon = parsedCoordinates?.coordinates?.lon ?? null;
 
     const patch: Partial<
       Pick<
@@ -214,6 +239,8 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
         | "normalizedAddress"
         | "status"
         | "ownerId"
+        | "lat"
+        | "lon"
         | "comment"
       >
     > = {};
@@ -237,6 +264,12 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
     if (nextComment !== item.point.comment) {
       patch.comment = nextComment;
     }
+    if (coordinatesTouched && nextLat !== item.point.lat) {
+      patch.lat = nextLat;
+    }
+    if (coordinatesTouched && nextLon !== item.point.lon) {
+      patch.lon = nextLon;
+    }
 
     if (Object.keys(patch).length === 0) {
       close();
@@ -244,6 +277,7 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
     }
 
     setValidationError(null);
+    setCoordinateValidationError(false);
     setIsSaving(true);
     const saved = await runMutation(
       () => updatePointLocal(item.point.id, patch),
@@ -289,7 +323,33 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
           </SelectContent>
         </Select>
       </Field>
-      <Field id="point-comment-edit" label="Комментарий" error={validationError}>
+      <Field id="point-coordinates-edit" label="Координаты">
+        <Input
+          id="point-coordinates-edit"
+          aria-describedby={coordinateValidationError ? COORDINATE_ERROR_ID : undefined}
+          aria-invalid={coordinateValidationError}
+          autoCapitalize="off"
+          autoCorrect="off"
+          inputMode="text"
+          placeholder="Широта, долгота или ссылка из карт"
+          spellCheck={false}
+          value={coordinates}
+          onChange={(event) => {
+            setCoordinatesTouched(true);
+            setCoordinates(event.target.value);
+          }}
+        />
+      </Field>
+      {validationError ? (
+        <p
+          className="ui-field-error"
+          id={coordinateValidationError ? COORDINATE_ERROR_ID : undefined}
+          role="alert"
+        >
+          {validationError}
+        </p>
+      ) : null}
+      <Field id="point-comment-edit" label="Комментарий">
         <Textarea
           id="point-comment-edit"
           value={comment}
@@ -525,7 +585,9 @@ function DetailsForm({
   return (
     <div className="ui-form">
       <div className="drawer-point-summary">
-        <span className="brand-pill">{getBrandLabel(item.point.brand)}</span>
+        <span className={getBrandPillClassName(item.point.brand)}>
+          {getBrandLabel(item.point.brand)}
+        </span>
         <strong>{item.point.address}</strong>
         <span>{item.owner?.name ?? "Без владельца"}</span>
       </div>

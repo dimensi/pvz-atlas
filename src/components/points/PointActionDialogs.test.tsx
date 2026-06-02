@@ -98,6 +98,30 @@ function renderOwnerDialog({
   return { onActionChange, runMutation };
 }
 
+function renderEditDialog({
+  pointOverride = {}
+}: {
+  pointOverride?: Partial<Point>;
+} = {}) {
+  const runMutation = vi.fn(async (mutation: () => Promise<unknown>) => {
+    await mutation();
+    return true;
+  });
+  const onActionChange = vi.fn();
+
+  render(
+    <PointActionDialogs
+      action="edit"
+      item={{ point: { ...point, ...pointOverride }, owner: null }}
+      owners={[]}
+      onActionChange={onActionChange}
+      runMutation={runMutation}
+    />
+  );
+
+  return { onActionChange, runMutation };
+}
+
 describe("PointActionDialogs owner flow", () => {
   beforeEach(() => {
     localActionMocks.createOwnerLocal.mockReset();
@@ -151,5 +175,165 @@ describe("PointActionDialogs owner flow", () => {
     expect(screen.queryByRole("tab", { name: "Управление" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Скрыть" })).toBeNull();
     expect(localActionMocks.updateOwnerLocal).not.toHaveBeenCalled();
+  });
+});
+
+describe("PointActionDialogs edit flow", () => {
+  beforeEach(() => {
+    localActionMocks.createOwnerLocal.mockReset();
+    localActionMocks.updateOwnerLocal.mockReset();
+    localActionMocks.updatePointLocal.mockReset();
+  });
+
+  it("saves pasted coordinates through the local point patch", async () => {
+    localActionMocks.updatePointLocal.mockResolvedValue({
+      ...point,
+      lat: 55.123,
+      lon: 37.123
+    });
+
+    renderEditDialog();
+
+    fireEvent.change(screen.getByLabelText("Координаты"), {
+      target: { value: "https://example.test/maps?ll=37.123,55.123" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => {
+      expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
+        lat: 55.123,
+        lon: 37.123
+      });
+    });
+  });
+
+  it("saves a manual coordinate pair through the local point patch", async () => {
+    localActionMocks.updatePointLocal.mockResolvedValue({
+      ...point,
+      lat: 55.456,
+      lon: 37.456
+    });
+
+    renderEditDialog();
+
+    fireEvent.change(screen.getByLabelText("Координаты"), {
+      target: { value: "55.456, 37.456" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => {
+      expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
+        lat: 55.456,
+        lon: 37.456
+      });
+    });
+  });
+
+  it("clears existing coordinates when the coordinate field is emptied", async () => {
+    localActionMocks.updatePointLocal.mockResolvedValue({
+      ...point,
+      lat: null,
+      lon: null
+    });
+
+    renderEditDialog({ pointOverride: { lat: 55.123, lon: 37.123 } });
+
+    fireEvent.change(screen.getByLabelText("Координаты"), {
+      target: { value: "" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => {
+      expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
+        lat: null,
+        lon: null
+      });
+    });
+  });
+
+  it("does not save an invalid coordinate patch", async () => {
+    renderEditDialog();
+
+    fireEvent.change(screen.getByLabelText("Координаты"), {
+      target: { value: "100, 37.123" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    expect(
+      await screen.findByText(
+        "Координаты должны быть числами: широта от -90 до 90, долгота от -180 до 180."
+      )
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Координаты").getAttribute("aria-invalid")).toBe("true");
+    expect(screen.getByLabelText("Координаты").getAttribute("aria-describedby")).toBe(
+      "point-coordinates-edit-error"
+    );
+    expect(localActionMocks.updatePointLocal).not.toHaveBeenCalled();
+  });
+
+  it("does not include unchanged full coordinates in unrelated edits", async () => {
+    localActionMocks.updatePointLocal.mockResolvedValue({
+      ...point,
+      lat: 55.123,
+      lon: 37.123,
+      comment: "Новая заметка"
+    });
+
+    renderEditDialog({ pointOverride: { lat: 55.123, lon: 37.123 } });
+
+    fireEvent.change(screen.getByLabelText("Комментарий"), {
+      target: { value: "Новая заметка" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => {
+      expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
+        comment: "Новая заметка"
+      });
+    });
+  });
+
+  it("preserves untouched partial existing coordinates during unrelated edits", async () => {
+    localActionMocks.updatePointLocal.mockResolvedValue({
+      ...point,
+      lat: 55.123,
+      lon: null,
+      comment: "Новая заметка"
+    });
+
+    renderEditDialog({ pointOverride: { lat: 55.123, lon: null } });
+
+    fireEvent.change(screen.getByLabelText("Комментарий"), {
+      target: { value: "Новая заметка" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => {
+      expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
+        comment: "Новая заметка"
+      });
+    });
+  });
+
+  it("preserves untouched longitude-only partial coordinates during unrelated edits", async () => {
+    localActionMocks.updatePointLocal.mockResolvedValue({
+      ...point,
+      lat: null,
+      lon: 37.123,
+      comment: "Новая заметка"
+    });
+
+    renderEditDialog({ pointOverride: { lat: null, lon: 37.123 } });
+
+    fireEvent.change(screen.getByLabelText("Комментарий"), {
+      target: { value: "Новая заметка" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Сохранить" }));
+
+    await waitFor(() => {
+      expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
+        comment: "Новая заметка"
+      });
+    });
   });
 });

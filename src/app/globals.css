@@ -512,6 +512,44 @@ select {
   resize: vertical;
 }
 
+.field-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.address-suggestion-item {
+  min-height: 56px;
+  align-items: center;
+}
+
+.address-combobox-content {
+  width: min(var(--anchor-width), calc(100vw - 24px));
+  max-height: min(320px, calc(100dvh - 220px));
+}
+
+.address-combobox-list {
+  max-height: min(300px, calc(100dvh - 240px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.address-suggestion-item strong,
+.address-suggestion-item small {
+  display: block;
+}
+
+.address-suggestion-item strong {
+  line-height: 1.25;
+}
+
+.address-suggestion-item small {
+  margin-top: 3px;
+  color: var(--muted);
+  line-height: 1.25;
+}
+
 .map-placeholder {
   min-height: 360px;
   display: grid;
@@ -1002,6 +1040,40 @@ select {
   gap: 8px;
 }
 
+.point-group .section-title {
+  position: sticky;
+  top: 72px;
+  z-index: 5;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+  border-left: 4px solid var(--accent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 900;
+  line-height: 1.2;
+  text-transform: none;
+  box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
+}
+
+.point-group .section-title span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.point-group .section-title span:last-child {
+  min-width: 30px;
+  min-height: 30px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent);
+  color: white;
+  font-size: 13px;
+}
+
 .point-card-list {
   display: grid;
   gap: 10px;
@@ -1122,6 +1194,16 @@ select {
   padding: 5px 8px;
   border-radius: 8px;
   background: var(--surface-muted);
+  overflow-wrap: anywhere;
+}
+
+.point-card-note {
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--text);
+  font-size: 14px;
   overflow-wrap: anywhere;
 }
 

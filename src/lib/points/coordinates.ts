@@ -72,9 +72,9 @@ function parsePair(value: string): ParsedPointCoordinates | null {
   return { lat: numbers[0], lon: numbers[1] };
 }
 
-function readUrlParam(value: string, name: string): string | null {
+function parseUrl(value: string): URL | null {
   try {
-    return new URL(value).searchParams.get(name);
+    return new URL(value);
   } catch {
     return null;
   }
@@ -86,20 +86,36 @@ export function parsePointCoordinatesText(text: string): CoordinateParseResult {
     return { ok: true, coordinates: null };
   }
 
-  const ll = readUrlParam(trimmed, "ll");
-  if (ll) {
-    const pair = parsePair(ll);
-    if (pair) {
-      return validatePair(pair.lon, pair.lat);
+  const url = parseUrl(trimmed);
+  if (url) {
+    const ll = url.searchParams.get("ll");
+    if (ll) {
+      const pair = parsePair(ll);
+      if (pair) {
+        return validatePair(pair.lon, pair.lat);
+      }
     }
-  }
 
-  const q = readUrlParam(trimmed, "q");
-  if (q) {
-    const pair = parsePair(q);
-    if (pair) {
-      return validatePair(pair.lat, pair.lon);
+    const pt = url.searchParams.get("pt");
+    if (pt) {
+      const pair = parsePair(pt);
+      if (pair) {
+        return validatePair(pair.lon, pair.lat);
+      }
     }
+
+    const q = url.searchParams.get("q") ?? url.searchParams.get("query") ?? url.searchParams.get("text");
+    if (q) {
+      const pair = parsePair(q);
+      if (pair) {
+        return validatePair(pair.lat, pair.lon);
+      }
+    }
+
+    return {
+      ok: false,
+      message: "Вставьте координаты в формате 55.123, 37.123 или ссылку с координатами."
+    };
   }
 
   const pair = parsePair(trimmed);

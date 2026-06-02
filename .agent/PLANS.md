@@ -50,6 +50,62 @@ Maintain a checklist while implementing.
 
 ---
 
+## DaData Address Suggestions On Add Form
+
+### Goal
+Add Russian address suggestions to the mobile add-PVZ form and auto-fill coordinates from the selected suggestion when DaData returns them.
+
+### Current repo state
+`src/app/add/page.tsx` renders `src/components/points/AddPointClient.tsx`. The form currently has brand, city, address, comment, and free-form coordinates fields. Save calls `createPointLocal`, which writes IndexedDB first and enqueues a `point` create `Change`. Existing typed API clients live in `src/lib/api/*`, and route handlers live under `src/app/api/*`. `.env.example` currently documents only Google Sheets and basic auth variables.
+
+### Data and API impact
+Add a same-origin API endpoint at `/api/address/suggest` and a typed client module for UI reads. Add server-only DaData token configuration through `DADATA_API_KEY`. No Google Sheets schema, IndexedDB schema, sync contracts, or point model fields change. Selected DaData coordinates map into existing `Point.lat` and `Point.lon`.
+
+### Approach
+Create request/response Zod schemas for address suggestions. Implement a server route that validates input, calls DaData Suggestions API with the server token, maps only safe fields into a small response, and returns structured API errors. Implement a typed client wrapper. Update the add form with debounced suggestions, loading/error/empty states, and a selectable list. On selection, set city/address and, if valid `geo_lat`/`geo_lon` are returned, fill the coordinates input.
+
+### Conflict and offline behavior
+Suggestions require network and do not mutate local data. If offline, suggestions fail non-destructively and manual address entry remains available. Saving remains local-first through `createPointLocal`; the create change contains the chosen address and any selected coordinates. Push/pull conflict behavior is unchanged. Manual Google Sheets edits still reconcile through the existing sync engine.
+
+### UI behavior
+The address field keeps working as a plain input. After enough text is typed, suggestions appear below the address field with large tap targets. Selecting a suggestion updates address/city and may populate coordinates. If DaData is not configured, the form shows a small inline hint while manual entry remains usable. No browser-native alerts/prompts are introduced.
+
+### Tests
+Add API client/schema tests for response parsing. Add route tests for missing token, invalid request, and successful DaData mapping with mocked `fetch`. Add component tests for selecting a suggestion and preserving local-first save payload. Run targeted tests, then typecheck and lint.
+
+### Risks
+DaData returns coordinates only for some selected suggestions and quality can be approximate; keep manual coordinate input visible. The token must not be exposed to browser code. Suggestion requests can be chatty; debounce and minimum query length reduce unnecessary traffic.
+
+### Rollback
+Remove `/api/address/suggest`, `src/lib/api/address-api.ts`, added schemas/tests, the AddPointClient suggestion UI, and `DADATA_API_KEY` from `.env.example`. Manual add form behavior remains intact.
+
+### Progress
+- [x] Read project instructions and task checklist.
+- [x] Start code mapper review.
+- [x] Inspect add form, API client, route, and local-first save path.
+- [x] Implement server route and typed API client.
+- [x] Update add form UI and tests.
+- [x] Run targeted tests, typecheck, lint, full test, and build.
+- [x] Run required review agents and fix blockers.
+
+Verification results:
+- `npm test -- src/components/points/AddPointClient.test.tsx src/app/api/address/suggest/route.test.ts`: passed, 2 files and 6 tests.
+- `npm test -- src/components/points/AddPointClient.test.tsx src/lib/api/address-api.test.ts src/app/api/address/suggest/route.test.ts src/lib/api/direct-fetch-boundary.test.ts`: passed, 4 files and 10 tests.
+- `npm run typecheck`: passed.
+- `npm run lint`: passed.
+- `npm test`: passed, 25 files and 105 tests.
+- `npm run build`: passed.
+
+Reviewer findings:
+- `code_mapper`: safe slice is add-form UI plus new typed suggestion API/client; keep local-first save path unchanged.
+- `map_cost_reviewer`: found blockers for quota/rate limiting and overstated coordinate accuracy; fixed with server-side TTL cache, per-minute/day limits, generic coordinate copy, and no map-render geocoding.
+- `sheets_data_reviewer`: found raw upstream error message and env-doc concerns; fixed with sanitized route errors, separated request/upstream validation, and server-only env docs.
+- `mobile_ui_reviewer`: found stale suggestions, small unlabeled combobox controls, and overwritten mobile button sizes; fixed by clearing stale results, labeling controls, restoring 44px+ button/touch targets, and associating live status with the input.
+- `local_first_sync_reviewer`: found stale coordinates could survive selecting a suggestion without coordinates; fixed by clearing coordinates in that case and adding regression coverage.
+- `test_hardening_reviewer`: found production compose env wiring and missing upstream error tests; fixed by passing DaData env vars through compose and adding upstream failure/malformed response tests.
+
+---
+
 ## Branded Leaflet Map Pins
 
 ### Goal
