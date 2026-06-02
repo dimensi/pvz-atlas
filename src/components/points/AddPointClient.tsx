@@ -228,14 +228,14 @@ export default function AddPointClient() {
               placeholder="Улица и дом"
               autoComplete="street-address"
               aria-describedby="address-suggest-status"
-              className="address-combobox-input min-h-12"
+              className="min-h-12"
               showClear
             />
-            <ComboboxContent className="address-combobox-content">
+            <ComboboxContent>
               <ComboboxEmpty>
                 {isSuggestingAddress ? "Ищу адрес..." : "Нет подсказок"}
               </ComboboxEmpty>
-              <ComboboxList className="address-combobox-list">
+              <ComboboxList>
                 {(suggestion: AddressSuggestion) => (
                   <ComboboxItem
                     key={suggestion.unrestrictedValue}

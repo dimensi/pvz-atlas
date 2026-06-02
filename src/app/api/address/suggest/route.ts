@@ -36,6 +36,12 @@ const dadataSuggestionSchema = z.object({
     house: z.string().nullable().optional(),
     block_type: z.string().nullable().optional(),
     block: z.string().nullable().optional(),
+    structure_type: z.string().nullable().optional(),
+    structure: z.string().nullable().optional(),
+    flat_type: z.string().nullable().optional(),
+    flat: z.string().nullable().optional(),
+    stead_type: z.string().nullable().optional(),
+    stead: z.string().nullable().optional(),
     geo_lat: z.string().nullable().optional(),
     geo_lon: z.string().nullable().optional(),
     qc_geo: z.union([z.string(), z.number()]).nullable().optional()
@@ -129,15 +135,75 @@ function consumeRateLimit(): boolean {
   return true;
 }
 
-function formatAddress(suggestion: z.infer<typeof dadataSuggestionSchema>): string {
-  const data = suggestion.data;
+function normalizeAddressSegment(segment: string): string {
+  return segment.trim().toLocaleLowerCase("ru-RU");
+}
+
+function isCitySegment(
+  segment: string,
+  data: z.infer<typeof dadataSuggestionSchema>["data"]
+): boolean {
+  const normalized = normalizeAddressSegment(segment);
+  const cityCandidates = [
+    data.city_with_type,
+    data.settlement_with_type,
+    data.city,
+    data.settlement
+  ]
+    .filter((value): value is string => Boolean(value))
+    .map(normalizeAddressSegment);
+
+  return cityCandidates.some((candidate) => normalized === candidate);
+}
+
+function formatStructuredAddressPart(
+  type: string | null | undefined,
+  value: string | null | undefined
+): string | null {
+  if (!value) {
+    return null;
+  }
+
+  return [type, value].filter(Boolean).join(" ");
+}
+
+function formatAddressFromStructuredParts(
+  data: z.infer<typeof dadataSuggestionSchema>["data"]
+): string | null {
   const parts = [
+    data.settlement_with_type && !data.street_with_type ? data.settlement_with_type : null,
     data.street_with_type,
-    data.house ? [data.house_type, data.house].filter(Boolean).join(" ") : null,
-    data.block ? [data.block_type, data.block].filter(Boolean).join(" ") : null
+    formatStructuredAddressPart(data.house_type, data.house),
+    formatStructuredAddressPart(data.block_type, data.block),
+    formatStructuredAddressPart(data.structure_type, data.structure),
+    formatStructuredAddressPart(data.flat_type, data.flat),
+    formatStructuredAddressPart(data.stead_type, data.stead)
   ].filter((part): part is string => Boolean(part));
 
-  return parts.length > 0 ? parts.join(", ") : suggestion.value;
+  return parts.length > 0 ? parts.join(", ") : null;
+}
+
+function formatAddress(suggestion: z.infer<typeof dadataSuggestionSchema>): string {
+  const data = suggestion.data;
+  const segments = suggestion.value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+
+  if (segments.length > 0) {
+    const addressSegments = [...segments];
+    while (addressSegments.length > 1 && isCitySegment(addressSegments[0], data)) {
+      addressSegments.shift();
+    }
+
+    const hasOnlyCity =
+      addressSegments.length === 1 && isCitySegment(addressSegments[0], data);
+    if (addressSegments.length > 0 && !hasOnlyCity) {
+      return addressSegments.join(", ");
+    }
+  }
+
+  return formatAddressFromStructuredParts(data) ?? suggestion.value;
 }
 
 function formatCity(data: z.infer<typeof dadataSuggestionSchema>["data"]): string | null {

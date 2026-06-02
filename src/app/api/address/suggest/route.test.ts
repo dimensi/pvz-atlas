@@ -96,6 +96,94 @@ describe("POST /api/address/suggest", () => {
     );
   });
 
+  it("keeps house details from DaData value after removing the city prefix", async () => {
+    vi.stubEnv("DADATA_API_KEY", "test-token");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            suggestions: [
+              {
+                value: "г Видное, ул Зеленые Аллеи, д 9, к 2, стр 1, оф 15",
+                unrestricted_value:
+                  "142701, Московская обл, г Видное, ул Зеленые Аллеи, д 9, к 2, стр 1, оф 15",
+                data: {
+                  city: "Видное",
+                  city_with_type: "г Видное",
+                  street_with_type: "ул Зеленые Аллеи",
+                  house_type: "д",
+                  house: "9",
+                  block_type: "к",
+                  block: "2",
+                  structure_type: "стр",
+                  structure: "1",
+                  flat_type: "оф",
+                  flat: "15",
+                  geo_lat: "55.551",
+                  geo_lon: "37.708",
+                  qc_geo: "0"
+                }
+              }
+            ]
+          }),
+          { status: 200 }
+        )
+      )
+    );
+
+    const response = await POST(jsonRequest({ query: "зеленые аллеи 9 к2 стр1", city: "Видное" }));
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      suggestions: [
+        {
+          address: "ул Зеленые Аллеи, д 9, к 2, стр 1, оф 15"
+        }
+      ]
+    });
+  });
+
+  it("falls back to structured parts when DaData value contains only the city", async () => {
+    vi.stubEnv("DADATA_API_KEY", "test-token");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(
+          JSON.stringify({
+            suggestions: [
+              {
+                value: "г Видное",
+                unrestricted_value: "142701, Московская обл, г Видное, ул Зеленые Аллеи, д 9",
+                data: {
+                  city: "Видное",
+                  city_with_type: "г Видное",
+                  street_with_type: "ул Зеленые Аллеи",
+                  house_type: "д",
+                  house: "9",
+                  block_type: "к",
+                  block: "2"
+                }
+              }
+            ]
+          }),
+          { status: 200 }
+        )
+      )
+    );
+
+    const response = await POST(jsonRequest({ query: "видное зеленые аллеи 9", city: "Видное" }));
+
+    expect(response.status).toBe(200);
+    expect(await readJson(response)).toMatchObject({
+      suggestions: [
+        {
+          address: "ул Зеленые Аллеи, д 9, к 2"
+        }
+      ]
+    });
+  });
+
   it("maps DaData auth failures to a sanitized unavailable error", async () => {
     vi.stubEnv("DADATA_API_KEY", "bad-token");
     vi.stubGlobal(
