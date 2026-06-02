@@ -282,7 +282,7 @@ export default function PointsListClient() {
                       <span>{item.owner?.name ?? "Без владельца"}</span>
                     </div>
                     {item.point.comment ? (
-                      <p className="point-card-note">Есть приватная заметка</p>
+                      <p className="point-card-note">{item.point.comment}</p>
                     ) : null}
 
                     <div className="point-actions" aria-label={`Действия для ${item.point.address}`}>
