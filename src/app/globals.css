@@ -567,59 +567,59 @@ select {
 
 .map-marker {
   position: relative;
-  width: 22px;
-  height: 33px;
+  width: 24px;
+  height: 24px;
   display: block;
   background: transparent;
   border: 0;
-  --marker-status-filter: drop-shadow(0 1px 0 #64748b) drop-shadow(1px 0 0 #64748b) drop-shadow(0 -1px 0 #64748b) drop-shadow(-1px 0 0 #64748b);
+  --marker-status-ring: #64748b;
 }
 
 .map-marker-pin {
   position: relative;
-  width: 22px;
-  height: 33px;
+  width: 24px;
+  height: 24px;
   display: block;
 }
 
 .map-marker-with-image .map-marker-pin img {
   position: relative;
   z-index: 1;
-  width: 22px;
-  height: 33px;
+  width: 24px;
+  height: 24px;
   display: block;
-  filter:
-    var(--marker-status-filter)
-    drop-shadow(0 8px 16px rgba(15, 23, 42, 0.24));
+  border: 2px solid var(--marker-status-ring);
+  border-radius: 999px;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.22);
   user-select: none;
 }
 
 .map-marker-vector-pin {
   position: relative;
   z-index: 1;
-  width: 22px;
-  height: 33px;
+  width: 24px;
+  height: 24px;
   display: block;
   overflow: visible;
-  filter:
-    var(--marker-status-filter)
-    drop-shadow(0 8px 16px rgba(15, 23, 42, 0.24));
+  border: 2px solid var(--marker-status-ring);
+  border-radius: 999px;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.22);
 }
 
 .map-marker-status-new {
-  --marker-status-filter: drop-shadow(0 1px 0 #64748b) drop-shadow(1px 0 0 #64748b) drop-shadow(0 -1px 0 #64748b) drop-shadow(-1px 0 0 #64748b);
+  --marker-status-ring: #64748b;
 }
 
 .map-marker-status-active {
-  --marker-status-filter: drop-shadow(0 1px 0 #0f766e) drop-shadow(1px 0 0 #0f766e) drop-shadow(0 -1px 0 #0f766e) drop-shadow(-1px 0 0 #0f766e);
+  --marker-status-ring: #0f766e;
 }
 
 .map-marker-status-needs-review {
-  --marker-status-filter: drop-shadow(0 1px 0 #dc2626) drop-shadow(1px 0 0 #dc2626) drop-shadow(0 -1px 0 #dc2626) drop-shadow(-1px 0 0 #dc2626);
+  --marker-status-ring: #dc2626;
 }
 
 .map-marker-status-closed {
-  --marker-status-filter: drop-shadow(0 1px 0 #334155) drop-shadow(1px 0 0 #334155) drop-shadow(0 -1px 0 #334155) drop-shadow(-1px 0 0 #334155);
+  --marker-status-ring: #334155;
 }
 
 .map-overlay {

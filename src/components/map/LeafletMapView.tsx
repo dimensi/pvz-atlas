@@ -29,8 +29,8 @@ function createBrandIcon(item: MappablePointItem) {
   return divIcon({
     className: getMapMarkerClassName(item.point.brand, item.point.status),
     html: getMapMarkerHtml(item.point.brand),
-    iconSize: [22, 33],
-    iconAnchor: [11, 32]
+    iconSize: [24, 24],
+    iconAnchor: [12, 24]
   });
 }
 
@@ -52,7 +52,7 @@ function MapViewportController({ markers }: { markers: MappablePointItem[] }) {
     map.fitBounds(bounds, {
       animate: true,
       maxZoom: SINGLE_MARKER_ZOOM,
-      padding: [24, 36]
+      padding: [24, 24]
     });
   }, [map, markers]);
 
