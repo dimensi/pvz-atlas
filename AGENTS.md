@@ -70,34 +70,6 @@ src/
   styles/
 ```
 
-## Codex review-agent workflow
-
-Codex subagents are not assumed to run automatically. For every non-trivial task, the working agent must intentionally use the relevant read-only review agents from `.codex/agents/` and report their findings.
-
-Use `.codex/prompts/task-start-checklist.md` at the start of non-trivial work.
-
-Default workflow:
-1. Read this `AGENTS.md`.
-2. Use `code_mapper` before implementation, except for tiny docs or typo-only tasks.
-3. Summarize the mapper findings before editing.
-4. Create or update an ExecPlan for architecture, sync, data model, UI migration, or map changes.
-5. Implement the smallest safe slice.
-6. Run targeted tests, typecheck, and lint where practical.
-7. Use the matching area review agents.
-8. Use `test_hardening_reviewer` before finishing non-docs work.
-9. Fix blocker findings before finalizing.
-10. Final response must include changed files, commands run, unresolved risks, and reviewer findings.
-
-Review agent routing:
-- `code_mapper`: use before non-trivial implementation to map entry points, flows, risks, and tests.
-- `mobile_ui_reviewer`: use for UI, components, styles, forms, drawers, dialogs, toasts, navigation, and map sheets.
-- `local_first_sync_reviewer`: use for IndexedDB, Change queue, sync engine, API clients, API routes, Sheets writes, conflict handling, and local mutations.
-- `map_cost_reviewer`: use for maps, geolocation, coordinates, geocoding, tiles, routing, nearby filters, and route links.
-- `sheets_data_reviewer`: use for Sheets adapter, import/export, owners, contact fields, logs, diagnostics, env vars, and debug routes.
-- `test_hardening_reviewer`: use before finishing non-docs work.
-
-If a task spans multiple areas, use multiple review agents. If a reviewer reports a data-loss, local-first, cost, or production-UX blocker, fix it before finalizing.
-
 ## Data model rules
 
 Every syncable entity must have:
