@@ -228,7 +228,7 @@ export default function AddPointClient() {
               placeholder="Улица и дом"
               autoComplete="street-address"
               aria-describedby="address-suggest-status"
-              className="min-h-12"
+              className="address-combobox-input min-h-12"
               showClear
             />
             <ComboboxContent className="address-combobox-content">
