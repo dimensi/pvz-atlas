@@ -560,26 +560,6 @@ select {
   line-height: 1.35;
 }
 
-.address-suggestion-item {
-  min-height: 56px;
-  align-items: center;
-}
-
-.address-suggestion-item strong,
-.address-suggestion-item small {
-  display: block;
-}
-
-.address-suggestion-item strong {
-  line-height: 1.25;
-}
-
-.address-suggestion-item small {
-  margin-top: 3px;
-  color: var(--muted);
-  line-height: 1.25;
-}
-
 .map-placeholder {
   min-height: 360px;
   display: grid;

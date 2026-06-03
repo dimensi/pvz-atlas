@@ -26,6 +26,12 @@ export interface PointCoordinateSplit {
   withoutCoordinates: MapPointItem[];
 }
 
+export interface MapMarkerCluster {
+  id: string;
+  coordinates: GeoPoint;
+  items: MappablePointItem[];
+}
+
 export interface MapMarkerFilters {
   mode?: MapQuickFilter;
   brand?: string;
@@ -144,6 +150,37 @@ export function filterMapMarkers(
         left.point.address.localeCompare(right.point.address, "ru-RU", { sensitivity: "base" })
       );
     });
+}
+
+function coordinateClusterKey(coordinates: GeoPoint): string {
+  return `${coordinates.lat.toFixed(6)},${coordinates.lon.toFixed(6)}`;
+}
+
+export function groupMapMarkersByCoordinates(items: MappablePointItem[]): MapMarkerCluster[] {
+  const clustersByCoordinate = new Map<string, MapMarkerCluster>();
+
+  for (const item of items) {
+    const id = coordinateClusterKey(item.coordinates);
+    const existingCluster = clustersByCoordinate.get(id);
+
+    if (existingCluster) {
+      existingCluster.items.push(item);
+      continue;
+    }
+
+    clustersByCoordinate.set(id, {
+      id,
+      coordinates: item.coordinates,
+      items: [item]
+    });
+  }
+
+  return Array.from(clustersByCoordinate.values()).map((cluster) => ({
+    ...cluster,
+    items: [...cluster.items].sort((left, right) =>
+      left.point.address.localeCompare(right.point.address, "ru-RU", { sensitivity: "base" })
+    )
+  }));
 }
 
 export function getAvailableMapBrands(items: MappablePointItem[]): string[] {

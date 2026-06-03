@@ -1,5 +1,26 @@
 # ExecPlans
 
+## Map Coordinate Clusters
+
+Status: in_progress
+
+Intent:
+- Prevent overlapping map pins for PVZ with identical coordinates.
+- Show one grouped marker with a count when several PVZ share a coordinate.
+- Open a bottom drawer with the grouped PVZ list, then let the operator choose a concrete PVZ for the existing details/edit flow.
+- Keep the map local-first and avoid new map provider or geocoder dependencies.
+
+Implementation:
+- Add coordinate grouping helpers in `src/lib/map/points.ts`.
+- Update `LeafletMapView` to render single-point markers and grouped count markers.
+- Update `LeafletMapClient` to open a cluster drawer and then route selection into the existing point details/actions drawers.
+- Add focused tests for coordinate grouping.
+
+Verification:
+- `pnpm test`
+- `pnpm run typecheck`
+- `pnpm run lint`
+
 ## Switch Project To pnpm
 
 Status: completed
