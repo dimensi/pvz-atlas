@@ -13,6 +13,7 @@ APP_IMAGE="${APP_IMAGE:-pvz-atlas-pvz-atlas:latest}"
 CADDY_CONTAINER="${CADDY_CONTAINER:-caddy}"
 PROXY_NETWORK="${PROXY_NETWORK:-apple_vidnoe_default}"
 DEPLOY_IMAGE_SOURCE="${DEPLOY_IMAGE_SOURCE:-build}"
+LOCAL_IMAGE_PLATFORM="${LOCAL_IMAGE_PLATFORM:-linux/amd64}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -89,6 +90,10 @@ case "${DEPLOY_IMAGE_SOURCE}" in
     ssh "${SSH_HOST}" "cd '${REMOTE_DIR}' && docker compose -f '${COMPOSE_FILE}' build --progress=plain"
     ;;
   local)
+    docker buildx build --platform "${LOCAL_IMAGE_PLATFORM}" -t "${APP_IMAGE}" --load "${ROOT_DIR}"
+    docker save "${APP_IMAGE}" | ssh "${SSH_HOST}" "docker load"
+    ;;
+  local-image)
     docker image inspect "${APP_IMAGE}" >/dev/null
     docker save "${APP_IMAGE}" | ssh "${SSH_HOST}" "docker load"
     ;;
@@ -96,7 +101,7 @@ case "${DEPLOY_IMAGE_SOURCE}" in
     ssh "${SSH_HOST}" "docker image inspect '${APP_IMAGE}' >/dev/null"
     ;;
   *)
-    echo "Unsupported DEPLOY_IMAGE_SOURCE='${DEPLOY_IMAGE_SOURCE}'. Use build, local, or none." >&2
+    echo "Unsupported DEPLOY_IMAGE_SOURCE='${DEPLOY_IMAGE_SOURCE}'. Use build, local, local-image, or none." >&2
     exit 2
     ;;
 esac

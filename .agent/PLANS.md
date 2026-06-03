@@ -2,7 +2,7 @@
 
 ## Map Coordinate Clusters
 
-Status: in_progress
+Status: completed
 
 Intent:
 - Prevent overlapping map pins for PVZ with identical coordinates.
@@ -20,6 +20,9 @@ Verification:
 - `pnpm test`
 - `pnpm run typecheck`
 - `pnpm run lint`
+
+Follow-up:
+- Adjusted coordinate grouping to cluster points within 1 meter, because sub-meter coordinate differences still overlap visually as Leaflet pins at normal mobile zoom.
 
 ## Switch Project To pnpm
 

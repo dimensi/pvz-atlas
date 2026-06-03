@@ -5,12 +5,13 @@ import { divIcon, latLngBounds, type LatLngExpression, type Marker as LeafletMar
 import { MapContainer, Marker, TileLayer, useMap } from "react-leaflet";
 import { getBrandLabel } from "@/lib/brands";
 import { getMapMarkerClassName, getMapMarkerHtml } from "@/lib/map/marker-style";
-import type { MappablePointItem } from "@/lib/map/points";
+import type { MappablePointItem, MapMarkerCluster } from "@/lib/map/points";
 import { POINT_STATUS_LABELS } from "@/lib/points/list";
 
 interface LeafletMapViewProps {
-  markers: MappablePointItem[];
+  markerClusters: MapMarkerCluster[];
   onMarkerSelect: (pointId: string) => void;
+  onClusterSelect: (clusterId: string) => void;
   onTileError: () => void;
 }
 
@@ -34,63 +35,88 @@ function createBrandIcon(item: MappablePointItem) {
   });
 }
 
-function MapViewportController({ markers }: { markers: MappablePointItem[] }) {
+function createClusterIcon(cluster: MapMarkerCluster) {
+  return divIcon({
+    className: "map-marker-cluster",
+    html: `<span class="map-marker-cluster-count">${cluster.items.length}</span>`,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18]
+  });
+}
+
+function clusterPosition(cluster: MapMarkerCluster): LatLngExpression {
+  return [cluster.coordinates.lat, cluster.coordinates.lon];
+}
+
+function MapViewportController({ clusters }: { clusters: MapMarkerCluster[] }) {
   const map = useMap();
 
   useEffect(() => {
-    if (markers.length === 0) {
+    if (clusters.length === 0) {
       map.setView(DEFAULT_MAP_CENTER, DEFAULT_ZOOM, { animate: true });
       return;
     }
 
-    if (markers.length === 1) {
-      map.setView(markerPosition(markers[0]), SINGLE_MARKER_ZOOM, { animate: true });
+    if (clusters.length === 1) {
+      map.setView(clusterPosition(clusters[0]), SINGLE_MARKER_ZOOM, { animate: true });
       return;
     }
 
-    const bounds = latLngBounds(markers.map(markerPosition));
+    const bounds = latLngBounds(clusters.map(clusterPosition));
     map.fitBounds(bounds, {
       animate: true,
       maxZoom: SINGLE_MARKER_ZOOM,
       padding: [24, 24]
     });
-  }, [map, markers]);
+  }, [map, clusters]);
 
   return null;
 }
 
 export default function LeafletMapView({
-  markers,
+  markerClusters,
+  onClusterSelect,
   onMarkerSelect,
   onTileError
 }: LeafletMapViewProps) {
   const markerIcons = useMemo(() => {
     const iconsByPointId = new Map<string, ReturnType<typeof createBrandIcon>>();
 
-    for (const item of markers) {
-      iconsByPointId.set(item.point.id, createBrandIcon(item));
+    for (const cluster of markerClusters) {
+      if (cluster.items.length === 1) {
+        const item = cluster.items[0];
+        iconsByPointId.set(item.point.id, createBrandIcon(item));
+      }
     }
 
     return iconsByPointId;
-  }, [markers]);
+  }, [markerClusters]);
 
-  const setMarkerAccessibility = (
-    marker: LeafletMarker,
-    item: MappablePointItem
-  ) => {
+  const clusterIcons = useMemo(() => {
+    const iconsByClusterId = new Map<string, ReturnType<typeof createClusterIcon>>();
+
+    for (const cluster of markerClusters) {
+      if (cluster.items.length > 1) {
+        iconsByClusterId.set(cluster.id, createClusterIcon(cluster));
+      }
+    }
+
+    return iconsByClusterId;
+  }, [markerClusters]);
+
+  const setMarkerAccessibility = (marker: LeafletMarker, label: string, onSelect: () => void) => {
     const element = marker.getElement();
     if (!element) {
       return;
     }
 
-    const label = `${getBrandLabel(item.point.brand)}: ${item.point.address}, ${POINT_STATUS_LABELS[item.point.status]}`;
     element.setAttribute("aria-label", label);
     element.setAttribute("role", "button");
     element.setAttribute("tabindex", "0");
     element.addEventListener("keydown", (event) => {
       if (event.key === "Enter" || event.key === " ") {
         event.preventDefault();
-        onMarkerSelect(item.point.id);
+        onSelect();
       }
     });
   };
@@ -108,19 +134,47 @@ export default function LeafletMapView({
         eventHandlers={{ tileerror: onTileError }}
         url={OSM_TILE_URL}
       />
-      <MapViewportController markers={markers} />
-      {markers.map((item) => (
-        <Marker
-          eventHandlers={{
-            add: (event) => setMarkerAccessibility(event.target as LeafletMarker, item),
-            click: () => onMarkerSelect(item.point.id)
-          }}
-          icon={markerIcons.get(item.point.id)}
-          key={item.point.id}
-          position={markerPosition(item)}
-          title={`${getBrandLabel(item.point.brand)}: ${item.point.address}`}
-        />
-      ))}
+      <MapViewportController clusters={markerClusters} />
+      {markerClusters.map((cluster) => {
+        if (cluster.items.length > 1) {
+          const label = `${cluster.items.length} ПВЗ в одной точке`;
+
+          return (
+            <Marker
+              eventHandlers={{
+                add: (event) =>
+                  setMarkerAccessibility(event.target as LeafletMarker, label, () =>
+                    onClusterSelect(cluster.id)
+                  ),
+                click: () => onClusterSelect(cluster.id)
+              }}
+              icon={clusterIcons.get(cluster.id)}
+              key={cluster.id}
+              position={clusterPosition(cluster)}
+              title={label}
+            />
+          );
+        }
+
+        const item = cluster.items[0];
+        const label = `${getBrandLabel(item.point.brand)}: ${item.point.address}, ${POINT_STATUS_LABELS[item.point.status]}`;
+
+        return (
+          <Marker
+            eventHandlers={{
+              add: (event) =>
+                setMarkerAccessibility(event.target as LeafletMarker, label, () =>
+                  onMarkerSelect(item.point.id)
+                ),
+              click: () => onMarkerSelect(item.point.id)
+            }}
+            icon={markerIcons.get(item.point.id)}
+            key={item.point.id}
+            position={markerPosition(item)}
+            title={`${getBrandLabel(item.point.brand)}: ${item.point.address}`}
+          />
+        );
+      })}
     </MapContainer>
   );
 }

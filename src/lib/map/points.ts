@@ -2,6 +2,7 @@ import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
 import { brandMatchesFilter, createBrandFilterOptions, sortBrandValues } from "@/lib/brands";
 
 export const DEFAULT_NEARBY_RADIUS_METERS = 1200;
+export const DEFAULT_MARKER_CLUSTER_RADIUS_METERS = 1;
 
 export type MapQuickFilter = "all" | "no-owner" | "nearby";
 
@@ -152,30 +153,34 @@ export function filterMapMarkers(
     });
 }
 
-function coordinateClusterKey(coordinates: GeoPoint): string {
+function coordinateClusterId(coordinates: GeoPoint): string {
   return `${coordinates.lat.toFixed(6)},${coordinates.lon.toFixed(6)}`;
 }
 
-export function groupMapMarkersByCoordinates(items: MappablePointItem[]): MapMarkerCluster[] {
-  const clustersByCoordinate = new Map<string, MapMarkerCluster>();
+export function groupMapMarkersByCoordinates(
+  items: MappablePointItem[],
+  clusterRadiusMeters = DEFAULT_MARKER_CLUSTER_RADIUS_METERS
+): MapMarkerCluster[] {
+  const clusters: MapMarkerCluster[] = [];
 
   for (const item of items) {
-    const id = coordinateClusterKey(item.coordinates);
-    const existingCluster = clustersByCoordinate.get(id);
+    const existingCluster = clusters.find(
+      (cluster) => distanceMeters(cluster.coordinates, item.coordinates) <= clusterRadiusMeters
+    );
 
     if (existingCluster) {
       existingCluster.items.push(item);
       continue;
     }
 
-    clustersByCoordinate.set(id, {
-      id,
+    clusters.push({
+      id: coordinateClusterId(item.coordinates),
       coordinates: item.coordinates,
       items: [item]
     });
   }
 
-  return Array.from(clustersByCoordinate.values()).map((cluster) => ({
+  return clusters.map((cluster) => ({
     ...cluster,
     items: [...cluster.items].sort((left, right) =>
       left.point.address.localeCompare(right.point.address, "ru-RU", { sensitivity: "base" })

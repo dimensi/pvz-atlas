@@ -4,6 +4,7 @@ import {
   createMapPointItems,
   filterMapMarkers,
   getAvailableMapBrands,
+  groupMapMarkersByCoordinates,
   splitPointCoordinates
 } from "./points";
 
@@ -137,5 +138,27 @@ describe("map point helpers", () => {
     );
 
     expect(getAvailableMapBrands(split.withCoordinates)).toEqual(["ozon", "wildberries"]);
+  });
+
+  it("groups markers that share the same coordinates", () => {
+    const split = splitPointCoordinates(
+      createMapPointItems(
+        [
+          point({ id: "same-b", address: "Арбат 2", lat: 55.555332, lon: 37.706835 }),
+          point({ id: "same-a", address: "Арбат 1", lat: 55.555332, lon: 37.706834 }),
+          point({ id: "other", address: "Тверская 3", lat: 55.555332, lon: 37.70695 })
+        ],
+        owners
+      )
+    );
+
+    const clusters = groupMapMarkersByCoordinates(split.withCoordinates);
+
+    expect(clusters).toHaveLength(2);
+    expect(clusters.find((cluster) => cluster.items.length === 2)?.items.map((item) => item.point.id)).toEqual([
+      "same-a",
+      "same-b"
+    ]);
+    expect(clusters.find((cluster) => cluster.items.length === 1)?.items[0].point.id).toBe("other");
   });
 });

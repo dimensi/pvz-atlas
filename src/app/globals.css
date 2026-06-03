@@ -685,6 +685,27 @@ select {
   --marker-status-halo-shadow: 0 0 0 8px rgba(250, 204, 21, 0.28), 0 0 18px rgba(250, 204, 21, 0.9);
 }
 
+.map-marker-cluster {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 2px solid #ffffff;
+  border-radius: 999px;
+  background: var(--accent);
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.24);
+  color: var(--accent-foreground);
+  font-weight: 900;
+}
+
+.map-marker-cluster-count {
+  min-width: 20px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
 .map-overlay {
   position: absolute;
   inset: 0;
@@ -944,6 +965,58 @@ select {
 
 .point-details-footer {
   padding: 0;
+}
+
+.map-cluster-list {
+  display: grid;
+  gap: 10px;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+}
+
+.map-cluster-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.map-cluster-main {
+  min-height: 72px;
+  display: grid;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.map-cluster-main strong,
+.map-cluster-main span {
+  overflow-wrap: anywhere;
+}
+
+.map-cluster-main > span:last-child {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.map-cluster-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.map-cluster-edit {
+  min-height: 44px;
 }
 
 .points-list-page {

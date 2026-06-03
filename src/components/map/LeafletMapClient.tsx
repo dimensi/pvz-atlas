@@ -7,7 +7,8 @@ import {
   Clock3,
   Crosshair,
   LocateFixed,
-  MapPinned
+  MapPinned,
+  Pencil
 } from "lucide-react";
 import { toast } from "sonner";
 import { getBrandLabel } from "@/lib/brands";
@@ -24,11 +25,13 @@ import {
   DrawerHeader,
   DrawerTitle
 } from "@/components/ui/drawer";
+import { Button } from "@/components/ui/button";
 import {
   createMapPointItems,
   DEFAULT_NEARBY_RADIUS_METERS,
   filterMapMarkers,
   getAvailableMapBrands,
+  groupMapMarkersByCoordinates,
   splitPointCoordinates,
   type GeoPoint,
   type MapQuickFilter
@@ -76,6 +79,7 @@ export default function LeafletMapClient() {
   const [brand, setBrand] = useState("");
   const [status, setStatus] = useState("");
   const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
+  const [selectedClusterId, setSelectedClusterId] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<GeoPoint | null>(null);
   const [isLocationSupported, setIsLocationSupported] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -114,9 +118,17 @@ export default function LeafletMapClient() {
       }),
     [brand, coordinateSplit.withCoordinates, mode, status, userLocation]
   );
+  const markerClusters = useMemo(
+    () => groupMapMarkersByCoordinates(filteredMarkers),
+    [filteredMarkers]
+  );
   const selectedItem = useMemo(
     () => filteredMarkers.find((item) => item.point.id === selectedPointId) ?? null,
     [filteredMarkers, selectedPointId]
+  );
+  const selectedCluster = useMemo(
+    () => markerClusters.find((cluster) => cluster.id === selectedClusterId) ?? null,
+    [markerClusters, selectedClusterId]
   );
   const hasLocalRows = state.points.length > 0 || state.owners.length > 0 || state.visits.length > 0;
   const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
@@ -152,8 +164,14 @@ export default function LeafletMapClient() {
 
   const openAction = (action: PointAction, item: PointActionItem) => {
     setSelectedPointId(null);
+    setSelectedClusterId(null);
     setActiveItem(item);
     setActiveAction(action);
+  };
+
+  const openClusterPointDetails = (item: PointActionItem) => {
+    setSelectedClusterId(null);
+    setSelectedPointId(item.point.id);
   };
 
   const handleStatusSelect = async (nextStatus: PointStatus) => {
@@ -274,7 +292,8 @@ export default function LeafletMapClient() {
         <div className="map-canvas">
           {coordinateSplit.withCoordinates.length > 0 && filteredMarkers.length > 0 ? (
             <LeafletMapView
-              markers={filteredMarkers}
+              markerClusters={markerClusters}
+              onClusterSelect={setSelectedClusterId}
               onMarkerSelect={setSelectedPointId}
               onTileError={() => setMapError("Не удалось загрузить тайлы OpenStreetMap.")}
             />
@@ -343,6 +362,56 @@ export default function LeafletMapClient() {
           </div>
         </section>
       ) : null}
+
+      <Drawer
+        open={Boolean(selectedCluster)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setSelectedClusterId(null);
+          }
+        }}
+      >
+        <DrawerContent className="point-drawer-content mx-auto h-auto w-full max-w-[720px] overflow-y-auto border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
+          <DrawerHeader>
+            <DrawerTitle>ПВЗ в одной точке</DrawerTitle>
+            <DrawerDescription>
+              {selectedCluster
+                ? `${selectedCluster.items.length} ПВЗ с одинаковыми координатами`
+                : "Группа не выбрана"}
+            </DrawerDescription>
+          </DrawerHeader>
+          {selectedCluster ? (
+            <div className="map-cluster-list">
+              {selectedCluster.items.map((item) => (
+                <article className="map-cluster-item" key={item.point.id}>
+                  <button
+                    className="map-cluster-main"
+                    type="button"
+                    onClick={() => openClusterPointDetails(item)}
+                  >
+                    <span className="map-cluster-meta">
+                      <BrandBadge brand={item.point.brand} />
+                      <span>{POINT_STATUS_LABELS[item.point.status]}</span>
+                      <span>{item.owner?.name ?? "Без владельца"}</span>
+                    </span>
+                    <strong>{item.point.address}</strong>
+                    <span>{item.point.city}</span>
+                  </button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="map-cluster-edit"
+                    onClick={() => openAction("edit", item)}
+                  >
+                    <Pencil size={18} aria-hidden="true" />
+                    Редактировать
+                  </Button>
+                </article>
+              ))}
+            </div>
+          ) : null}
+        </DrawerContent>
+      </Drawer>
 
       <Drawer
         open={Boolean(selectedItem)}
