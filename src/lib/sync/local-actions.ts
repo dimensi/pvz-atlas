@@ -1,6 +1,7 @@
 "use client";
 
 import type { Owner, Point, Visit } from "@/lib/data-model/types";
+import { resolveConflictLocal, type ConflictResolutionChoice } from "@/lib/sync/conflict-resolution";
 import {
   createOwner,
   createPoint,
@@ -39,4 +40,11 @@ export function addVisitLocal(input: MarkPointVisitedInput): Promise<Visit> {
 
 export function removeVisitLocal(visitId: string): Promise<Visit> {
   return updateVisitPatch(visitId, { deletedAt: new Date().toISOString() } satisfies VisitLocalPatch);
+}
+
+export function resolveSyncConflictLocal(
+  conflictId: string,
+  resolution: ConflictResolutionChoice
+) {
+  return resolveConflictLocal(conflictId, resolution);
 }

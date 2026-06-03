@@ -8,6 +8,7 @@ import {
 } from "@/lib/api/sync-api";
 import type { PullResponse, PushRequest, PushResponse } from "@/lib/api/types";
 import { markChangeRecordsApplied } from "./changes";
+import { mergePulledConflicts } from "./conflict-resolution";
 
 export interface SyncApiClient {
   pullSync: typeof defaultPullSync;
@@ -79,7 +80,17 @@ async function applyPullResponse(
         await database.visits.bulkPut(cleanVisits);
       }
       if (response.conflicts && response.conflicts.length > 0) {
-        await database.conflicts.bulkPut(response.conflicts);
+        const existingConflicts = await database.conflicts.bulkGet(
+          response.conflicts.map((conflict) => conflict.id)
+        );
+        await database.conflicts.bulkPut(
+          mergePulledConflicts(
+            response.conflicts,
+            existingConflicts.filter((conflict): conflict is NonNullable<typeof conflict> =>
+              Boolean(conflict)
+            )
+          )
+        );
       }
 
       await database.meta.put({

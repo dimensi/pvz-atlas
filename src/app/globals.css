@@ -306,6 +306,71 @@ select {
   color: white;
 }
 
+.conflict-list {
+  display: grid;
+  gap: 10px;
+}
+
+.conflict-card {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.conflict-title {
+  color: var(--text) !important;
+  font-weight: 800;
+}
+
+.conflict-meta {
+  font-size: 13px;
+}
+
+.conflict-values {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.conflict-values div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.conflict-values span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.conflict-values strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  line-height: 1.25;
+}
+
+.conflict-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+@media (min-width: 520px) {
+  .conflict-values,
+  .conflict-actions {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .ui-form,
 .ui-field {
   display: grid;
@@ -449,30 +514,6 @@ select {
   gap: 8px;
 }
 
-.drawer-point-summary {
-  display: grid;
-  gap: 8px;
-  padding: 10px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface-muted);
-}
-
-.drawer-point-summary strong,
-.drawer-point-summary span {
-  overflow-wrap: anywhere;
-}
-
-.drawer-action-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.drawer-action-grid button {
-  min-height: 46px;
-}
-
 .form {
   display: grid;
   gap: 12px;
@@ -599,7 +640,9 @@ select {
   display: block;
   background: transparent;
   border: 0;
-  --marker-status-ring: #64748b;
+  --marker-pin-opacity: 1;
+  --marker-status-halo: rgba(250, 204, 21, 0);
+  --marker-status-halo-shadow: 0 0 0 rgba(250, 204, 21, 0);
 }
 
 .map-marker-pin {
@@ -609,15 +652,28 @@ select {
   display: block;
 }
 
+.map-marker-pin::before {
+  position: absolute;
+  z-index: 0;
+  inset: -8px;
+  display: block;
+  border-radius: 999px;
+  background: var(--marker-status-halo);
+  box-shadow: var(--marker-status-halo-shadow);
+  content: "";
+}
+
 .map-marker-with-image .map-marker-pin img {
   position: relative;
   z-index: 1;
   width: 24px;
   height: 24px;
   display: block;
-  border: 2px solid var(--marker-status-ring);
+  border: 0;
   border-radius: 999px;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.22);
+  box-shadow: none;
+  outline: 0;
+  opacity: var(--marker-pin-opacity);
   user-select: none;
 }
 
@@ -628,25 +684,25 @@ select {
   height: 24px;
   display: block;
   overflow: visible;
-  border: 2px solid var(--marker-status-ring);
+  border: 0;
   border-radius: 999px;
-  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.22);
+  box-shadow: none;
+  outline: 0;
+  opacity: var(--marker-pin-opacity);
 }
 
 .map-marker-status-new {
-  --marker-status-ring: #64748b;
+  --marker-pin-opacity: 0.5;
 }
 
 .map-marker-status-active {
-  --marker-status-ring: #0f766e;
+  --marker-pin-opacity: 1;
 }
 
 .map-marker-status-needs-review {
-  --marker-status-ring: #dc2626;
-}
-
-.map-marker-status-closed {
-  --marker-status-ring: #334155;
+  --marker-pin-opacity: 1;
+  --marker-status-halo: rgba(250, 204, 21, 0.55);
+  --marker-status-halo-shadow: 0 0 0 8px rgba(250, 204, 21, 0.28), 0 0 18px rgba(250, 204, 21, 0.9);
 }
 
 .map-overlay {
@@ -834,13 +890,8 @@ select {
   font-size: 13px;
 }
 
-.map-marker-details {
-  display: grid;
-  gap: 10px;
-  padding: 0 16px 16px;
-}
-
-.marker-drawer-content {
+/* Единый контент деталей ПВЗ для drawer списка и карты. */
+.point-drawer-content {
   height: fit-content !important;
   min-height: 0 !important;
 }
@@ -849,52 +900,69 @@ select {
   display: none !important;
 }
 
-.marker-drawer-content [data-slot="drawer-header"],
-.marker-drawer-content .map-marker-details {
+.point-drawer-content [data-slot="drawer-header"],
+.point-drawer-content .point-details-content {
   flex: 0 0 auto;
 }
 
-.marker-drawer-content .map-marker-details {
-  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+.point-details-content {
+  display: grid;
+  gap: 12px;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
 }
 
-.map-marker-details h3 {
+.point-details-heading h3 {
   margin: 0;
   font-size: 20px;
   line-height: 1.22;
+  overflow-wrap: anywhere;
 }
 
-.map-marker-details p {
+.point-details-heading p {
   margin: 4px 0 0;
   color: var(--muted);
 }
 
-.map-marker-details .button {
-  gap: 8px;
+.point-details-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.map-sheet-actions {
+.point-details-meta span {
+  max-width: 100%;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.point-details-note {
+  border-left: 3px solid var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface)) !important;
+}
+
+.point-details-actions {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
 }
 
-.map-sheet-actions .button {
-  min-height: 44px;
-  padding: 0 10px;
-  font-size: 14px;
+.point-details-actions-wide {
+  grid-column: 1 / -1;
 }
 
-.distance-pill {
-  min-height: 26px;
-  display: inline-flex;
-  align-items: center;
-  padding: 0 8px;
-  border-radius: 999px;
-  background: #eef2ff;
-  color: #3730a3;
-  font-size: 12px;
-  font-weight: 800;
+.point-details-content > [data-slot="button"],
+.point-details-actions [data-slot="button"],
+.point-details-footer [data-slot="button"] {
+  min-height: 46px;
+}
+
+.point-details-footer {
+  padding: 0;
 }
 
 .points-list-page {
@@ -1169,6 +1237,33 @@ select {
   color: #92400e;
 }
 
+.point-status-picker {
+  width: 100%;
+}
+
+/* Цвета статуса в picker — без pill-стиля .point-status, чтобы не ломать ButtonGroup. */
+.point-status-picker [data-slot="button"].point-status-picker-option-selected.point-status-picker-option-new {
+  background: #edf2f7;
+  color: #475569;
+  border-color: #cbd5e1;
+}
+
+.point-status-picker [data-slot="button"].point-status-picker-option-selected.point-status-picker-option-active {
+  background: #e4f7ec;
+  color: #166534;
+  border-color: #86efac;
+}
+
+.point-status-picker [data-slot="button"].point-status-picker-option-selected.point-status-picker-option-needs-review {
+  background: #fff3d6;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.point-status-picker [data-slot="button"].point-status-picker-option-selected:hover {
+  filter: brightness(0.97);
+}
+
 .point-details {
   display: flex;
   flex-wrap: wrap;
@@ -1250,10 +1345,6 @@ select {
   .app-shell {
     border-right: 1px solid var(--line);
     border-left: 1px solid var(--line);
-  }
-
-  .map-sheet-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .map-panel {

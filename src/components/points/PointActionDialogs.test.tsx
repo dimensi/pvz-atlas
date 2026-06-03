@@ -122,6 +122,45 @@ function renderEditDialog({
   return { onActionChange, runMutation };
 }
 
+function renderDetailsDialog() {
+  const runMutation = vi.fn(async (mutation: () => Promise<unknown>) => {
+    await mutation();
+    return true;
+  });
+  const onActionChange = vi.fn();
+
+  render(
+    <PointActionDialogs
+      action="details"
+      item={{ point, owner: null }}
+      owners={[]}
+      onActionChange={onActionChange}
+      runMutation={runMutation}
+    />
+  );
+
+  return { onActionChange, runMutation };
+}
+
+describe("PointActionDialogs details flow", () => {
+  beforeEach(() => {
+    localActionMocks.updatePointLocal.mockReset();
+  });
+
+  it("saves status immediately from the inline picker", async () => {
+    localActionMocks.updatePointLocal.mockResolvedValue({ ...point, status: "active" });
+
+    renderDetailsDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Активный" }));
+
+    await waitFor(() => {
+      expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
+        status: "active"
+      });
+    });
+  });
+});
+
 describe("PointActionDialogs owner flow", () => {
   beforeEach(() => {
     localActionMocks.createOwnerLocal.mockReset();

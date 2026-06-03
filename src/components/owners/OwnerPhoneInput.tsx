@@ -2,7 +2,6 @@
 
 import { IMaskInput } from "react-imask";
 import { cn } from "@/lib/utils";
-import { Input } from "@/components/ui/input";
 
 interface OwnerPhoneInputProps {
   id: string;
@@ -10,58 +9,7 @@ interface OwnerPhoneInputProps {
   onValueChange: (value: string) => void;
 }
 
-export function normalizeRussianPhoneForMask(value: string): string {
-  const trimmed = value.trim();
-  const digits = trimmed.replace(/\D/g, "");
-
-  if (digits.length === 10) {
-    return `+7${digits}`;
-  }
-
-  if (digits.length === 11 && digits.startsWith("8")) {
-    return `+7${digits.slice(1)}`;
-  }
-
-  if (digits.length === 11 && digits.startsWith("7")) {
-    return `+${digits}`;
-  }
-
-  return value;
-}
-
-function prepareRussianPhoneInput(appended: string, masked: { value?: string }): string {
-  const normalized = normalizeRussianPhoneForMask(appended);
-  if (normalized !== appended) {
-    return normalized;
-  }
-
-  if (!masked.value && appended === "8") {
-    return "+7";
-  }
-
-  return appended;
-}
-
 export function OwnerPhoneInput({ id, onValueChange, value }: OwnerPhoneInputProps) {
-  const trimmedValue = value.trim();
-  const shouldUseRussianMask =
-    trimmedValue === "" ||
-    trimmedValue.startsWith("+7") ||
-    trimmedValue.startsWith("7") ||
-    trimmedValue.startsWith("8");
-
-  if (!shouldUseRussianMask) {
-    return (
-      <Input
-        id={id}
-        inputMode="tel"
-        placeholder="+7 (999) 123-45-67"
-        value={value}
-        onChange={(event) => onValueChange(event.target.value)}
-      />
-    );
-  }
-
   return (
     <IMaskInput
       id={id}
@@ -69,8 +17,15 @@ export function OwnerPhoneInput({ id, onValueChange, value }: OwnerPhoneInputPro
       inputMode="tel"
       mask="+{7} (000) 000-00-00"
       placeholder="+7 (999) 123-45-67"
-      prepare={prepareRussianPhoneInput}
-      value={normalizeRussianPhoneForMask(value)}
+      prepare={(appended, masked) => {
+        // Обрабатываем только самое начало ввода (когда поле пустое)
+        if (masked.value === "") {
+          // Если ввод (или вставка) начинается с 8, отрезаем её
+          if (appended.startsWith("8")) return appended.slice(1);
+        }
+        return appended;
+      }}
+      value={value}
       unmask={false}
       onAccept={(nextValue) => onValueChange(String(nextValue))}
       className={cn(

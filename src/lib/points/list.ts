@@ -8,6 +8,20 @@ export const POINT_STATUS_LABELS: Record<PointStatus, string> = {
   needs_review: "Проверить"
 };
 
+/** Статусы, доступные оператору в UI (closed временно скрыт). */
+export const EDITABLE_POINT_STATUSES = [
+  "new",
+  "active",
+  "needs_review"
+  // "closed",
+] as const satisfies readonly PointStatus[];
+
+export type EditablePointStatus = (typeof EDITABLE_POINT_STATUSES)[number];
+
+export function isEditablePointStatus(value: string): value is EditablePointStatus {
+  return (EDITABLE_POINT_STATUSES as readonly string[]).includes(value);
+}
+
 export interface PointListFilters {
   search?: string;
   noOwnerOnly?: boolean;

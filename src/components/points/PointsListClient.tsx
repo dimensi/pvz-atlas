@@ -11,19 +11,19 @@ import { useOnlineCachedSnapshot } from "@/lib/sync/use-online-cached-snapshot";
 import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
 import {
   createPointListItems,
+  EDITABLE_POINT_STATUSES,
   filterPointListItems,
   getAvailableBrands,
   groupPointListItems,
+  isEditablePointStatus,
   POINT_STATUS_LABELS,
   type PointListItem
 } from "@/lib/points/list";
 import { PointActionDialogs, type PointAction } from "./PointActionDialogs";
 import { SyncHealthIndicator } from "@/components/sync/SyncHealthIndicator";
 
-const STATUS_OPTIONS: PointStatus[] = ["new", "active", "needs_review", "closed"];
-
 function isKnownStatus(value: string): value is PointStatus {
-  return STATUS_OPTIONS.includes(value as PointStatus);
+  return isEditablePointStatus(value);
 }
 
 function statusClassName(status: PointStatus): string {
@@ -208,7 +208,7 @@ export default function PointsListClient() {
             <span>Статус</span>
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="">Все</option>
-              {STATUS_OPTIONS.map((statusOption) => (
+              {EDITABLE_POINT_STATUSES.map((statusOption) => (
                 <option key={statusOption} value={statusOption}>
                   {POINT_STATUS_LABELS[statusOption]}
                 </option>

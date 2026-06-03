@@ -4,20 +4,18 @@ import dynamic from "next/dynamic";
 import { useEffect, useMemo, useState } from "react";
 import {
   AlertTriangle,
-  Archive,
   Clock3,
   Crosshair,
-  MessageSquare,
   LocateFixed,
-  MapPinned,
-  Navigation,
-  Pencil,
-  UserPlus
+  MapPinned
 } from "lucide-react";
 import { toast } from "sonner";
-import { getBrandLabel, getBrandPillClassName } from "@/lib/brands";
+import { getBrandLabel } from "@/lib/brands";
 import type { PointStatus } from "@/lib/data-model/types";
+import { BrandBadge } from "@/components/points/PointBadges";
+import { PointDetailsContent } from "@/components/points/PointDetailsContent";
 import { PointActionDialogs, type PointAction, type PointActionItem } from "@/components/points/PointActionDialogs";
+import { updatePointLocal } from "@/lib/sync/local-actions";
 import { SyncHealthIndicator } from "@/components/sync/SyncHealthIndicator";
 import {
   Drawer,
@@ -35,7 +33,11 @@ import {
   type GeoPoint,
   type MapQuickFilter
 } from "@/lib/map/points";
-import { POINT_STATUS_LABELS } from "@/lib/points/list";
+import {
+  EDITABLE_POINT_STATUSES,
+  isEditablePointStatus,
+  POINT_STATUS_LABELS
+} from "@/lib/points/list";
 import { useOnlineCachedSnapshot } from "@/lib/sync/use-online-cached-snapshot";
 import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
 
@@ -44,14 +46,8 @@ const LeafletMapView = dynamic(() => import("./LeafletMapView"), {
   loading: () => <div className="map-canvas map-canvas-loading" />
 });
 
-const STATUS_OPTIONS: PointStatus[] = ["new", "active", "needs_review", "closed"];
-
-function statusClassName(status: PointStatus): string {
-  return `point-status point-status-${status.replace("_", "-")}`;
-}
-
 function isKnownStatus(value: string): value is PointStatus {
-  return STATUS_OPTIONS.includes(value as PointStatus);
+  return isEditablePointStatus(value);
 }
 
 function formatDistance(value: number | null): string | null {
@@ -88,6 +84,7 @@ export default function LeafletMapClient() {
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [activeAction, setActiveAction] = useState<PointAction | null>(null);
   const [activeItem, setActiveItem] = useState<PointActionItem | null>(null);
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
@@ -157,6 +154,19 @@ export default function LeafletMapClient() {
     setSelectedPointId(null);
     setActiveItem(item);
     setActiveAction(action);
+  };
+
+  const handleStatusSelect = async (nextStatus: PointStatus) => {
+    if (!selectedItem || nextStatus === selectedItem.point.status) {
+      return;
+    }
+
+    setIsSavingStatus(true);
+    await runMutation(
+      () => updatePointLocal(selectedItem.point.id, { status: nextStatus }),
+      "Сохранено на устройстве."
+    );
+    setIsSavingStatus(false);
   };
 
   const handleNearby = () => {
@@ -246,7 +256,7 @@ export default function LeafletMapClient() {
             <span>Статус</span>
             <select value={status} onChange={(event) => setStatus(event.target.value)}>
               <option value="">Все</option>
-              {STATUS_OPTIONS.map((statusOption) => (
+              {EDITABLE_POINT_STATUSES.map((statusOption) => (
                 <option key={statusOption} value={statusOption}>
                   {POINT_STATUS_LABELS[statusOption]}
                 </option>
@@ -323,9 +333,7 @@ export default function LeafletMapClient() {
           <div className="missing-coordinate-list">
             {coordinateSplit.withoutCoordinates.slice(0, 6).map((item) => (
               <article className="missing-coordinate-item" key={item.point.id}>
-                <span className={getBrandPillClassName(item.point.brand)}>
-                  {getBrandLabel(item.point.brand)}
-                </span>
+                <BrandBadge brand={item.point.brand} />
                 <div>
                   <strong>{item.point.address}</strong>
                   <span>{item.point.city}</span>
@@ -344,7 +352,7 @@ export default function LeafletMapClient() {
           }
         }}
       >
-        <DrawerContent className="marker-drawer-content mx-auto h-auto w-full max-w-[720px] overflow-visible border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
+        <DrawerContent className="point-drawer-content mx-auto h-auto w-full max-w-[720px] overflow-y-auto border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
           <DrawerHeader>
             <DrawerTitle>Детали ПВЗ</DrawerTitle>
             <DrawerDescription>
@@ -354,83 +362,21 @@ export default function LeafletMapClient() {
             </DrawerDescription>
           </DrawerHeader>
           {selectedItem ? (
-            <div className="map-marker-details">
-              <div className="point-meta-row">
-                <span className={getBrandPillClassName(selectedItem.point.brand)}>
-                  {getBrandLabel(selectedItem.point.brand)}
-                </span>
-                <span className={statusClassName(selectedItem.point.status)}>
-                  {POINT_STATUS_LABELS[selectedItem.point.status]}
-                </span>
-                {formatDistance(selectedItem.distanceMeters) ? (
-                  <span className="distance-pill">
-                    {formatDistance(selectedItem.distanceMeters)}
-                  </span>
-                ) : null}
-              </div>
-              <div>
-                <h3>{selectedItem.point.address}</h3>
-                <p>{selectedItem.point.city}</p>
-              </div>
-              <div className="point-details">
-                <span>{selectedItem.owner?.name ?? "Владелец не назначен"}</span>
-                {selectedItem.point.comment ? <span>{selectedItem.point.comment}</span> : null}
-              </div>
-              <a
-                className="button"
-                href={buildYandexRouteUrl({
-                  lat: selectedItem.coordinates.lat,
-                  lon: selectedItem.coordinates.lon
-                })}
-                target="_blank"
-                rel="noreferrer"
-              >
-                <Navigation size={18} aria-hidden="true" />
-                Маршрут
-              </a>
-              <div className="map-sheet-actions" aria-label="Действия с ПВЗ на карте">
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => openAction("owner", selectedItem)}
-                >
-                  <UserPlus size={18} aria-hidden="true" />
-                  Назначить владельца
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => openAction("status", selectedItem)}
-                >
-                  <AlertTriangle size={18} aria-hidden="true" />
-                  Изменить статус
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => openAction("note", selectedItem)}
-                >
-                  <MessageSquare size={18} aria-hidden="true" />
-                  Заметка
-                </button>
-                <button
-                  className="button secondary"
-                  type="button"
-                  onClick={() => openAction("edit", selectedItem)}
-                >
-                  <Pencil size={18} aria-hidden="true" />
-                  Редактировать
-                </button>
-                <button
-                  className="button destructive"
-                  type="button"
-                  onClick={() => openAction("close", selectedItem)}
-                >
-                  <Archive size={18} aria-hidden="true" />
-                  Закрыть
-                </button>
-              </div>
-            </div>
+            <PointDetailsContent
+              point={selectedItem.point}
+              owner={selectedItem.owner}
+              distanceLabel={formatDistance(selectedItem.distanceMeters)}
+              routeUrl={buildYandexRouteUrl({
+                lat: selectedItem.coordinates.lat,
+                lon: selectedItem.coordinates.lon
+              })}
+              isSavingStatus={isSavingStatus}
+              onStatusSelect={handleStatusSelect}
+              onAssignOwner={() => openAction("owner", selectedItem)}
+              onEdit={() => openAction("edit", selectedItem)}
+              onNote={() => openAction("note", selectedItem)}
+              onClose={() => setSelectedPointId(null)}
+            />
           ) : null}
         </DrawerContent>
       </Drawer>

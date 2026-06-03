@@ -1,30 +1,22 @@
 "use client";
 
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Archive, Check, Pencil, Plus, Save, Search } from "lucide-react";
+import { Check, Plus, Save, Search } from "lucide-react";
 import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
 import {
   BRAND_OPTIONS,
   canonicalizeBrand,
   getBrandLabel,
-  getBrandPillClassName,
   getStoredBrand,
   type BrandId
 } from "@/lib/brands";
 import { normalizeAddressPart } from "@/lib/data-model/source-key";
 import { createOwnerLocal, updatePointLocal } from "@/lib/sync/local-actions";
 import { parsePointCoordinatesText } from "@/lib/points/coordinates";
-import { POINT_STATUS_LABELS } from "@/lib/points/list";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle
-} from "@/components/ui/alert-dialog";
+import { getPointCoordinates } from "@/lib/map/points";
+import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
+import { PointDetailsContent } from "@/components/points/PointDetailsContent";
+import { PointStatusPicker } from "@/components/points/PointStatusPicker";
 import { Button } from "@/components/ui/button";
 import {
   Drawer,
@@ -45,7 +37,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
-export type PointAction = "details" | "edit" | "owner" | "note" | "status" | "close";
+export type PointAction = "details" | "edit" | "owner" | "note";
 
 export interface PointActionItem {
   point: Point;
@@ -67,7 +59,6 @@ interface ActionFormProps {
   runMutation: PointActionDialogsProps["runMutation"];
 }
 
-const STATUS_OPTIONS: PointStatus[] = ["new", "active", "needs_review", "closed"];
 const OWNER_NONE_VALUE = "__none__";
 const COORDINATE_ERROR_ID = "point-coordinates-edit-error";
 
@@ -109,31 +100,6 @@ function Field({
   );
 }
 
-function StatusSelect({
-  labelledBy,
-  value,
-  onChange
-}: {
-  labelledBy?: string;
-  value: PointStatus;
-  onChange: (value: PointStatus) => void;
-}) {
-  return (
-    <Select value={value} onValueChange={(nextValue) => onChange(nextValue as PointStatus)}>
-      <SelectTrigger id={labelledBy} aria-labelledby={labelledBy}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {STATUS_OPTIONS.map((status) => (
-          <SelectItem key={status} value={status}>
-            {POINT_STATUS_LABELS[status]}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
-
 function BrandSelect({
   labelledBy,
   value,
@@ -160,13 +126,7 @@ function BrandSelect({
 }
 
 function isActionDrawer(action: PointAction | null): boolean {
-  return (
-    action === "details" ||
-    action === "edit" ||
-    action === "owner" ||
-    action === "note" ||
-    action === "status"
-  );
+  return action === "details" || action === "edit" || action === "owner" || action === "note";
 }
 
 function drawerTitle(action: PointAction | null): string {
@@ -182,11 +142,7 @@ function drawerTitle(action: PointAction | null): string {
     return "Назначить владельца";
   }
 
-  if (action === "note") {
-    return "Заметка";
-  }
-
-  return "Изменить статус";
+  return "Заметка";
 }
 
 function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
@@ -306,7 +262,7 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
         />
       </Field>
       <Field id="point-status-edit" label="Статус">
-        <StatusSelect labelledBy="point-status-edit" value={status} onChange={setStatus} />
+        <PointStatusPicker value={status} onSelect={setStatus} />
       </Field>
       <Field id="point-owner-edit" label="Владелец">
         <Select value={ownerId} onValueChange={setOwnerId}>
@@ -533,88 +489,41 @@ function NoteForm({ close, item, runMutation }: Omit<ActionFormProps, "owners">)
   );
 }
 
-function StatusForm({ close, item, runMutation }: Omit<ActionFormProps, "owners">) {
-  const [status, setStatus] = useState<PointStatus>(item.point.status);
-  const [isSaving, setIsSaving] = useState(false);
+function DetailsForm({ close, item, runMutation, setAction }: ActionFormProps & {
+  setAction: (action: PointAction) => void;
+}) {
+  const [isSavingStatus, setIsSavingStatus] = useState(false);
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (status === item.point.status) {
-      close();
+  const handleStatusSelect = async (nextStatus: PointStatus) => {
+    if (nextStatus === item.point.status) {
       return;
     }
 
-    setIsSaving(true);
-    const saved = await runMutation(
-      () => updatePointLocal(item.point.id, { status }),
+    setIsSavingStatus(true);
+    await runMutation(
+      () => updatePointLocal(item.point.id, { status: nextStatus }),
       "Сохранено на устройстве."
     );
-    setIsSaving(false);
-
-    if (saved) {
-      close();
-    }
+    setIsSavingStatus(false);
   };
 
-  return (
-    <form className="ui-form" onSubmit={handleSubmit}>
-      <Field id="point-status" label="Статус">
-        <StatusSelect labelledBy="point-status" value={status} onChange={setStatus} />
-      </Field>
-      <div className={`point-status ${`point-status-${status.replace("_", "-")}`}`}>
-        {POINT_STATUS_LABELS[status]}
-      </div>
-      <DrawerFooter>
-        <Button type="submit" disabled={isSaving}>
-          <Save size={18} aria-hidden="true" />
-          {isSaving ? "Сохраняю..." : "Сохранить"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={close}>
-          Отмена
-        </Button>
-      </DrawerFooter>
-    </form>
-  );
-}
+  const coordinates = getPointCoordinates(item.point);
+  const routeUrl = coordinates
+    ? buildYandexRouteUrl({ lat: coordinates.lat, lon: coordinates.lon })
+    : null;
 
-function DetailsForm({
-  close,
-  item,
-  setAction
-}: Omit<ActionFormProps, "owners" | "runMutation"> & { setAction: (action: PointAction) => void }) {
   return (
-    <div className="ui-form">
-      <div className="drawer-point-summary">
-        <span className={getBrandPillClassName(item.point.brand)}>
-          {getBrandLabel(item.point.brand)}
-        </span>
-        <strong>{item.point.address}</strong>
-        <span>{item.owner?.name ?? "Без владельца"}</span>
-      </div>
-      <div className="drawer-action-grid" aria-label="Действия с ПВЗ">
-        <Button type="button" variant="secondary" onClick={() => setAction("edit")}>
-          <Pencil size={18} aria-hidden="true" />
-          Редактировать
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => setAction("note")}>
-          <Save size={18} aria-hidden="true" />
-          Заметка
-        </Button>
-        <Button type="button" variant="secondary" onClick={() => setAction("status")}>
-          <Check size={18} aria-hidden="true" />
-          Статус
-        </Button>
-        <Button type="button" variant="destructive" onClick={() => setAction("close")}>
-          <Archive size={18} aria-hidden="true" />
-          Закрыть ПВЗ
-        </Button>
-      </div>
-      <DrawerFooter>
-        <Button type="button" variant="secondary" onClick={close}>
-          Готово
-        </Button>
-      </DrawerFooter>
-    </div>
+    <PointDetailsContent
+      point={item.point}
+      owner={item.owner}
+      routeUrl={routeUrl}
+      isSavingStatus={isSavingStatus}
+      onStatusSelect={handleStatusSelect}
+      onAssignOwner={() => setAction("owner")}
+      onEdit={() => setAction("edit")}
+      onNote={() => setAction("note")}
+      onClose={close}
+    />
   );
 }
 
@@ -625,26 +534,7 @@ export function PointActionDialogs({
   onActionChange,
   runMutation
 }: PointActionDialogsProps) {
-  const [isClosing, setIsClosing] = useState(false);
   const close = () => onActionChange(null);
-
-  const handleClosePoint = async () => {
-    if (!item || item.point.status === "closed") {
-      close();
-      return;
-    }
-
-    setIsClosing(true);
-    const saved = await runMutation(
-      () => updatePointLocal(item.point.id, { status: "closed" }),
-      "Сохранено на устройстве."
-    );
-    setIsClosing(false);
-
-    if (saved) {
-      close();
-    }
-  };
 
   return (
     <>
@@ -656,7 +546,7 @@ export function PointActionDialogs({
           }
         }}
       >
-        <DrawerContent className="mx-auto h-auto w-full max-w-[720px] overflow-y-auto border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
+        <DrawerContent className="point-drawer-content mx-auto h-auto w-full max-w-[720px] overflow-y-auto border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
           <DrawerHeader>
             <DrawerTitle>{drawerTitle(action)}</DrawerTitle>
             <DrawerDescription>
@@ -669,6 +559,8 @@ export function PointActionDialogs({
               key={`${item.point.id}-details`}
               close={close}
               item={item}
+              owners={owners}
+              runMutation={runMutation}
               setAction={onActionChange}
             />
           ) : null}
@@ -702,50 +594,8 @@ export function PointActionDialogs({
             />
           ) : null}
 
-          {action === "status" && item ? (
-            <StatusForm
-              key={`${item.point.id}-status`}
-              close={close}
-              item={item}
-              runMutation={runMutation}
-            />
-          ) : null}
         </DrawerContent>
       </Drawer>
-
-      <AlertDialog
-        open={Boolean(item) && action === "close"}
-        onOpenChange={(open) => {
-          if (!open) {
-            close();
-          }
-        }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Закрыть ПВЗ?</AlertDialogTitle>
-            <AlertDialogDescription>
-              ПВЗ будет закрыт на устройстве. Если есть конфликт, нужно будет выбрать версию.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel disabled={isClosing}>
-              Отмена
-            </AlertDialogCancel>
-            <AlertDialogAction
-              variant="destructive"
-              disabled={isClosing}
-              onClick={(event) => {
-                event.preventDefault();
-                void handleClosePoint();
-              }}
-            >
-              <Archive size={18} aria-hidden="true" />
-              Закрыть ПВЗ
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </>
   );
 }
