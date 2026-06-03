@@ -1,13 +1,20 @@
 "use client";
 
-import { MessageSquare, Navigation, Pencil, UserPlus, Trash2 } from "lucide-react";
+import { MessageSquare, Navigation, Pencil, UserPlus } from "lucide-react";
 import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
-import { BrandBadge, StatusBadge } from "@/components/points/PointBadges";
+import { BrandBadge } from "@/components/points/PointBadges";
 import { PointStatusPicker } from "@/components/points/PointStatusPicker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DrawerFooter } from "@/components/ui/drawer";
 import { Label } from "@/components/ui/label";
+
+export interface PointDetailsVisibleActions {
+  route?: boolean;
+  assignOwner?: boolean;
+  note?: boolean;
+  edit?: boolean;
+}
 
 export interface PointDetailsContentProps {
   point: Point;
@@ -15,11 +22,11 @@ export interface PointDetailsContentProps {
   distanceLabel?: string | null;
   routeUrl?: string | null;
   isSavingStatus?: boolean;
+  visibleActions?: PointDetailsVisibleActions;
   onStatusSelect: (status: PointStatus) => void | Promise<void>;
   onAssignOwner?: () => void;
   onEdit: () => void;
   onNote: () => void;
-  onDelete?: () => void;
   onClose: () => void;
 }
 
@@ -29,14 +36,18 @@ export function PointDetailsContent({
   distanceLabel,
   routeUrl,
   isSavingStatus = false,
+  visibleActions,
   onStatusSelect,
   onAssignOwner,
   onEdit,
   onNote,
-  onDelete,
   onClose
 }: PointDetailsContentProps) {
   const isClosed = point.status === "closed";
+  const showRoute = visibleActions?.route ?? Boolean(routeUrl);
+  const showAssignOwner = visibleActions?.assignOwner ?? Boolean(onAssignOwner);
+  const showNote = visibleActions?.note ?? true;
+  const showEdit = visibleActions?.edit ?? true;
 
   return (
     <div className="point-details-content">
@@ -67,7 +78,7 @@ export function PointDetailsContent({
         />
       </div>
 
-      {routeUrl ? (
+      {showRoute && routeUrl ? (
         <Button asChild className="point-details-route">
           <a href={routeUrl} target="_blank" rel="noreferrer">
             <Navigation size={18} aria-hidden="true" />
@@ -77,7 +88,7 @@ export function PointDetailsContent({
       ) : null}
 
       <div className="point-details-actions" aria-label="Действия с ПВЗ">
-        {onAssignOwner ? (
+        {showAssignOwner && onAssignOwner ? (
           <Button
             type="button"
             variant="outline"
@@ -88,14 +99,18 @@ export function PointDetailsContent({
             Назначить владельца
           </Button>
         ) : null}
-        <Button type="button" variant="outline" onClick={onNote}>
-          <MessageSquare size={18} aria-hidden="true" />
-          Заметка
-        </Button>
-        <Button type="button" variant="outline" onClick={onEdit}>
-          <Pencil size={18} aria-hidden="true" />
-          Редактировать
-        </Button>
+        {showNote ? (
+          <Button type="button" variant="outline" onClick={onNote}>
+            <MessageSquare size={18} aria-hidden="true" />
+            Заметка
+          </Button>
+        ) : null}
+        {showEdit ? (
+          <Button type="button" variant="outline" onClick={onEdit}>
+            <Pencil size={18} aria-hidden="true" />
+            Редактировать
+          </Button>
+        ) : null}
       </div>
 
       <DrawerFooter className="point-details-footer">

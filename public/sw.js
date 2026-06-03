@@ -1,8 +1,8 @@
-const CACHE_NAME = "pvz-atlas-v3";
+const CACHE_NAME = "pvz-atlas-v4";
 const APP_SHELL_URLS = [
   "/",
-  "/points",
   "/map",
+  "/points",
   "/add",
   "/owners",
   "/sync",
@@ -69,7 +69,7 @@ self.addEventListener("fetch", (event) => {
         .catch(async () => {
           return (
             (await caches.match(event.request)) ??
-            (await caches.match("/points")) ??
+            (await caches.match("/map")) ??
             new Response("Приложение недоступно без сети.", {
               headers: { "Content-Type": "text/plain; charset=utf-8" },
               status: 503

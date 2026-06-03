@@ -142,9 +142,53 @@ function renderDetailsDialog() {
   return { onActionChange, runMutation };
 }
 
+function renderMapDetailsDialog() {
+  const runMutation = vi.fn(async (mutation: () => Promise<unknown>) => {
+    await mutation();
+    return true;
+  });
+  const onActionChange = vi.fn();
+
+  render(
+    <PointActionDialogs
+      action="details"
+      item={{ point, owner: null }}
+      owners={[]}
+      distanceLabel="350 м"
+      routeUrl="https://maps.example.test/route"
+      visibleDetailActions={{ route: true, assignOwner: true }}
+      onActionChange={onActionChange}
+      runMutation={runMutation}
+    />
+  );
+
+  return { onActionChange, runMutation };
+}
+
 describe("PointActionDialogs details flow", () => {
   beforeEach(() => {
     localActionMocks.updatePointLocal.mockReset();
+  });
+
+  it("hides route and assign-owner actions by default for list details", () => {
+    renderDetailsDialog();
+
+    expect(screen.queryByRole("link", { name: "Маршрут" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Назначить владельца" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Заметка" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Редактировать" })).toBeTruthy();
+  });
+
+  it("shows map details route and assign-owner actions when enabled", () => {
+    const { onActionChange } = renderMapDetailsDialog();
+
+    expect(screen.getByText("350 м")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Маршрут" }).getAttribute("href")).toBe(
+      "https://maps.example.test/route"
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Назначить владельца" }));
+    expect(onActionChange).toHaveBeenCalledWith("owner");
   });
 
   it("saves status immediately from the inline picker", async () => {
@@ -156,6 +200,23 @@ describe("PointActionDialogs details flow", () => {
     await waitFor(() => {
       expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
         status: "active"
+      });
+    });
+  });
+
+  it("soft-deletes the point through the shared confirmation dialog", async () => {
+    localActionMocks.updatePointLocal.mockResolvedValue({
+      ...point,
+      deletedAt: "2026-06-04T00:00:00.000Z"
+    });
+
+    renderDetailsDialog();
+    fireEvent.click(screen.getByRole("button", { name: "Удалить ПВЗ" }));
+    fireEvent.click(screen.getByRole("button", { name: "Удалить" }));
+
+    await waitFor(() => {
+      expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
+        deletedAt: expect.any(String)
       });
     });
   });
@@ -180,12 +241,15 @@ describe("PointActionDialogs owner flow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Создать и назначить" }));
 
     await waitFor(() => {
-      expect(localActionMocks.createOwnerLocal).toHaveBeenCalledWith({ name: "Иван" });
+      expect(localActionMocks.createOwnerLocal).toHaveBeenCalledWith({
+        name: "Иван",
+        phone: null
+      });
       expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
         ownerId: "owner-new"
       });
     });
-    expect(onActionChange).not.toHaveBeenCalled();
+    expect(onActionChange).toHaveBeenCalledWith(null);
   });
 
   it("assigns an existing owner immediately when tapped", async () => {
@@ -203,7 +267,7 @@ describe("PointActionDialogs owner flow", () => {
       });
     });
     expect(localActionMocks.createOwnerLocal).not.toHaveBeenCalled();
-    expect(onActionChange).not.toHaveBeenCalled();
+    expect(onActionChange).toHaveBeenCalledWith(null);
   });
 
   it("does not expose owner management from the point owner drawer", () => {

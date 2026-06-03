@@ -13,17 +13,12 @@ import { toast } from "sonner";
 import { getBrandLabel } from "@/lib/brands";
 import type { PointStatus } from "@/lib/data-model/types";
 import { BrandBadge } from "@/components/points/PointBadges";
-import { PointDetailsContent } from "@/components/points/PointDetailsContent";
-import { PointActionDialogs, type PointAction, type PointActionItem } from "@/components/points/PointActionDialogs";
-import { updatePointLocal } from "@/lib/sync/local-actions";
-import { SyncHealthIndicator } from "@/components/sync/SyncHealthIndicator";
 import {
-  Drawer,
-  DrawerContent,
-  DrawerDescription,
-  DrawerHeader,
-  DrawerTitle
-} from "@/components/ui/drawer";
+  PointActionDialogs,
+  type PointAction,
+  type PointActionItem
+} from "@/components/points/PointActionDialogs";
+import { SyncHealthIndicator } from "@/components/sync/SyncHealthIndicator";
 import {
   createMapPointItems,
   DEFAULT_NEARBY_RADIUS_METERS,
@@ -76,7 +71,6 @@ export default function LeafletMapClient() {
   const [mode, setMode] = useState<MapQuickFilter>("all");
   const [brand, setBrand] = useState("");
   const [status, setStatus] = useState("");
-  const [selectedPointId, setSelectedPointId] = useState<string | null>(null);
   const [userLocation, setUserLocation] = useState<GeoPoint | null>(null);
   const [isLocationSupported, setIsLocationSupported] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
@@ -85,7 +79,6 @@ export default function LeafletMapClient() {
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [activeAction, setActiveAction] = useState<PointAction | null>(null);
   const [activeItem, setActiveItem] = useState<PointActionItem | null>(null);
-  const [isSavingStatus, setIsSavingStatus] = useState(false);
 
   useEffect(() => {
     const loadTimer = window.setTimeout(() => {
@@ -119,10 +112,26 @@ export default function LeafletMapClient() {
     () => groupMapMarkersByCoordinates(filteredMarkers),
     [filteredMarkers]
   );
-  const selectedItem = useMemo(
-    () => filteredMarkers.find((item) => item.point.id === selectedPointId) ?? null,
-    [filteredMarkers, selectedPointId]
-  );
+  const dialogItem = useMemo(() => {
+    if (!activeItem) {
+      return null;
+    }
+
+    return allItems.find((item) => item.point.id === activeItem.point.id) ?? activeItem;
+  }, [activeItem, allItems]);
+  const activeMapItem = useMemo(() => {
+    if (!activeItem) {
+      return null;
+    }
+
+    return filteredMarkers.find((item) => item.point.id === activeItem.point.id) ?? null;
+  }, [activeItem, filteredMarkers]);
+  const activeRouteUrl = activeMapItem
+    ? buildYandexRouteUrl({
+        lat: activeMapItem.coordinates.lat,
+        lon: activeMapItem.coordinates.lon
+      })
+    : null;
   const hasLocalRows = state.points.length > 0 || state.owners.length > 0 || state.visits.length > 0;
   const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
   const error = mutationError ?? cacheError;
@@ -156,22 +165,15 @@ export default function LeafletMapClient() {
   };
 
   const openAction = (action: PointAction, item: PointActionItem) => {
-    setSelectedPointId(null);
     setActiveItem(item);
     setActiveAction(action);
   };
 
-  const handleStatusSelect = async (nextStatus: PointStatus) => {
-    if (!selectedItem || nextStatus === selectedItem.point.status) {
-      return;
+  const openMarkerDetails = (pointId: string) => {
+    const item = filteredMarkers.find((marker) => marker.point.id === pointId);
+    if (item) {
+      openAction("details", item);
     }
-
-    setIsSavingStatus(true);
-    await runMutation(
-      () => updatePointLocal(selectedItem.point.id, { status: nextStatus }),
-      "Сохранено на устройстве."
-    );
-    setIsSavingStatus(false);
   };
 
   const handleNearby = () => {
@@ -280,7 +282,7 @@ export default function LeafletMapClient() {
           {coordinateSplit.withCoordinates.length > 0 && filteredMarkers.length > 0 ? (
             <LeafletMapView
               markerClusters={markerClusters}
-              onMarkerSelect={setSelectedPointId}
+              onMarkerSelect={openMarkerDetails}
               onTileError={() => setMapError("Не удалось загрузить тайлы OpenStreetMap.")}
             />
           ) : null}
@@ -349,46 +351,13 @@ export default function LeafletMapClient() {
         </section>
       ) : null}
 
-      <Drawer
-        open={Boolean(selectedItem)}
-        onOpenChange={(open) => {
-          if (!open) {
-            setSelectedPointId(null);
-          }
-        }}
-      >
-        <DrawerContent className="point-drawer-content mx-auto h-auto w-full max-w-[720px] overflow-y-auto border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
-          <DrawerHeader>
-            <DrawerTitle>Детали ПВЗ</DrawerTitle>
-            <DrawerDescription>
-              {selectedItem
-                ? `${getBrandLabel(selectedItem.point.brand)}, ${selectedItem.point.address}`
-                : "ПВЗ не выбран"}
-            </DrawerDescription>
-          </DrawerHeader>
-          {selectedItem ? (
-            <PointDetailsContent
-              point={selectedItem.point}
-              owner={selectedItem.owner}
-              distanceLabel={formatDistance(selectedItem.distanceMeters)}
-              routeUrl={buildYandexRouteUrl({
-                lat: selectedItem.coordinates.lat,
-                lon: selectedItem.coordinates.lon
-              })}
-              isSavingStatus={isSavingStatus}
-              onStatusSelect={handleStatusSelect}
-              onAssignOwner={() => openAction("owner", selectedItem)}
-              onEdit={() => openAction("edit", selectedItem)}
-              onNote={() => openAction("note", selectedItem)}
-              onClose={() => setSelectedPointId(null)}
-            />
-          ) : null}
-        </DrawerContent>
-      </Drawer>
       <PointActionDialogs
         action={activeAction}
-        item={activeItem}
+        item={dialogItem}
         owners={availableOwners}
+        distanceLabel={formatDistance(activeMapItem?.distanceMeters ?? null)}
+        routeUrl={activeRouteUrl}
+        visibleDetailActions={{ route: true, assignOwner: true }}
         onActionChange={(nextAction) => {
           setActiveAction(nextAction);
           if (nextAction === null) {

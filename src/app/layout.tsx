@@ -30,13 +30,12 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
   themeColor: "#f8fafc"
 };
 
 const tabs = [
-  { href: "/points", label: "Список", icon: ListTodo },
   { href: "/map", label: "Карта", icon: Map },
+  { href: "/points", label: "Список", icon: ListTodo },
   { href: "/add", label: "Добавить", icon: Plus },
   { href: "/owners", label: "Владельцы", icon: Users }
 ];

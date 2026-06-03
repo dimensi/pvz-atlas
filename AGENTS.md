@@ -165,8 +165,8 @@ Design for phone usage first:
 - Actions should be possible with one hand while walking.
 
 Primary tabs:
-- List
 - Map
+- List
 - Add
 - Sync
 

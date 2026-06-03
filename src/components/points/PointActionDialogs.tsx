@@ -13,7 +13,10 @@ import {
 import { normalizeAddressPart } from "@/lib/data-model/source-key";
 import { createOwnerLocal, updatePointLocal } from "@/lib/sync/local-actions";
 import { parsePointCoordinatesText } from "@/lib/points/coordinates";
-import { PointDetailsContent } from "@/components/points/PointDetailsContent";
+import {
+  PointDetailsContent,
+  type PointDetailsVisibleActions
+} from "@/components/points/PointDetailsContent";
 import { PointStatusPicker } from "@/components/points/PointStatusPicker";
 import { OwnerPhoneInput } from "@/components/owners/OwnerPhoneInput";
 import { Button } from "@/components/ui/button";
@@ -53,10 +56,13 @@ export interface PointActionItem {
   owner: Owner | null;
 }
 
-interface PointActionDialogsProps {
+export interface PointActionDialogsProps {
   action: PointAction | null;
   item: PointActionItem | null;
   owners: Owner[];
+  distanceLabel?: string | null;
+  routeUrl?: string | null;
+  visibleDetailActions?: PointDetailsVisibleActions;
   onActionChange: (action: PointAction | null) => void;
   runMutation: (mutation: () => Promise<unknown>, successMessage: string) => Promise<boolean>;
 }
@@ -513,9 +519,19 @@ function NoteForm({ close, item, runMutation }: Omit<ActionFormProps, "owners">)
   );
 }
 
-function DetailsForm({ close, item, runMutation, setAction, onDelete }: ActionFormProps & {
+function DetailsForm({
+  close,
+  distanceLabel,
+  item,
+  routeUrl,
+  runMutation,
+  setAction,
+  visibleDetailActions
+}: ActionFormProps & {
+  distanceLabel?: string | null;
+  routeUrl?: string | null;
   setAction: (action: PointAction) => void;
-  onDelete: () => void;
+  visibleDetailActions: PointDetailsVisibleActions;
 }) {
   const [isSavingStatus, setIsSavingStatus] = useState(false);
 
@@ -536,11 +552,14 @@ function DetailsForm({ close, item, runMutation, setAction, onDelete }: ActionFo
     <PointDetailsContent
       point={item.point}
       owner={item.owner}
+      distanceLabel={distanceLabel}
+      routeUrl={routeUrl}
       isSavingStatus={isSavingStatus}
+      visibleActions={visibleDetailActions}
       onStatusSelect={handleStatusSelect}
+      onAssignOwner={() => setAction("owner")}
       onEdit={() => setAction("edit")}
       onNote={() => setAction("note")}
-      onDelete={onDelete}
       onClose={close}
     />
   );
@@ -550,12 +569,22 @@ export function PointActionDialogs({
   action,
   item,
   owners,
+  distanceLabel,
+  routeUrl,
+  visibleDetailActions,
   onActionChange,
   runMutation
 }: PointActionDialogsProps) {
   const close = () => onActionChange(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
+  const resolvedDetailActions: PointDetailsVisibleActions = {
+    route: false,
+    assignOwner: false,
+    note: true,
+    edit: true,
+    ...visibleDetailActions
+  };
 
   const handleDelete = async () => {
     if (!item) return;
@@ -609,9 +638,11 @@ export function PointActionDialogs({
                 close={close}
                 item={item}
                 owners={owners}
+                distanceLabel={distanceLabel}
+                routeUrl={routeUrl}
                 runMutation={runMutation}
                 setAction={onActionChange}
-                onDelete={() => setShowDeleteConfirm(true)}
+                visibleDetailActions={resolvedDetailActions}
               />
             ) : null}
 

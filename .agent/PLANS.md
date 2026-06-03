@@ -1,5 +1,52 @@
 # ExecPlans
 
+## Unified PVZ Drawer
+
+Status: completed
+
+Intent:
+- Make `PointActionDialogs` the single PVZ details/edit drawer for list and map.
+- Keep list drawer behavior canonical and avoid duplicating card-level actions inside list details.
+- Preserve map-only details context such as route and distance.
+
+Implementation:
+- Add optional route, distance, and visible-action controls to the shared point action drawer.
+- Let `PointDetailsContent` render route/owner/note/edit actions from explicit visibility flags.
+- Replace the map-local details drawer, delete dialog, and status mutation state with `PointActionDialogs`.
+- Add focused tests for default hidden actions, map-visible actions, edit patching, and soft-delete.
+
+Verification:
+- `pnpm vitest run src/components/points/PointActionDialogs.test.tsx`
+- `pnpm run typecheck`
+- `pnpm run lint`
+- `pnpm test`
+- `pnpm run build`
+
+## Mobile Map Page Zoom Trap
+
+Status: completed
+
+Intent:
+- Stop mobile browsers from auto-zooming the whole page when the operator uses map filters.
+- Keep Leaflet map pinch/drag behavior unchanged.
+- Avoid trapping users at an enlarged page scale.
+
+Root cause:
+- The map filter native `select` controls inherit a `13px` font size. Mobile Safari auto-zooms the page when focusing form controls below 16px.
+- The global viewport sets `maximumScale: 1`, which can prevent the operator from manually shrinking the page after a browser zoom.
+
+Implementation:
+- Remove the `maximumScale` viewport cap from `src/app/layout.tsx`.
+- Set map/list filter native selects to at least `16px` in `src/app/globals.css`.
+- Add a focused CSS test so filter selects do not regress below the mobile-safe font size.
+
+Verification:
+- `pnpm vitest run src/lib/map/mobile-zoom-css.test.ts`
+- `pnpm run typecheck`
+- `pnpm run lint`
+- `pnpm run build`
+- `pnpm test`
+
 ## Map Coordinate Clusters
 
 Status: completed

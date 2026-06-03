@@ -161,5 +161,5 @@ ssh "${SSH_HOST}" "docker exec '${CADDY_CONTAINER}' caddy validate --config /etc
 ssh "${SSH_HOST}" "docker exec '${CADDY_CONTAINER}' caddy reload --config /etc/caddy/Caddyfile"
 
 ssh "${SSH_HOST}" "docker ps --filter name='${APP_NAME}' --format 'table {{.Names}}\t{{.Status}}\t{{.Networks}}'"
-ssh "${SSH_HOST}" "docker run --rm --network '${PROXY_NETWORK}' curlimages/curl:8.11.1 -I --max-time 8 http://${APP_NAME}:3000/points"
+ssh "${SSH_HOST}" "docker run --rm --network '${PROXY_NETWORK}' curlimages/curl:8.11.1 -I --max-time 8 http://${APP_NAME}:3000/map"
 ssh "${SSH_HOST}" "docker run --rm --network '${PROXY_NETWORK}' curlimages/curl:8.11.1 -I --max-time 8 -H 'Host: ${DOMAIN}' http://${CADDY_CONTAINER}/"
