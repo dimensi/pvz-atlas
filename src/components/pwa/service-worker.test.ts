@@ -26,4 +26,13 @@ describe("service worker policy", () => {
     expect(respondWithIndex).toBeGreaterThan(-1);
     expect(apiGuardIndex).toBeLessThan(respondWithIndex);
   });
+
+  it("does not cache Next build assets because stale chunks break Turbopack runtime", () => {
+    const nextAssetGuardIndex = serviceWorkerSource.indexOf('url.pathname.startsWith("/_next/")');
+    const respondWithIndex = serviceWorkerSource.indexOf("event.respondWith");
+
+    expect(nextAssetGuardIndex).toBeGreaterThan(-1);
+    expect(respondWithIndex).toBeGreaterThan(-1);
+    expect(nextAssetGuardIndex).toBeLessThan(respondWithIndex);
+  });
 });

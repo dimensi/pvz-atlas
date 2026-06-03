@@ -1,4 +1,4 @@
-const CACHE_NAME = "pvz-atlas-v2";
+const CACHE_NAME = "pvz-atlas-v3";
 const APP_SHELL_URLS = [
   "/",
   "/points",
@@ -51,6 +51,10 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
 
   if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) {
+    return;
+  }
+
+  if (url.pathname.startsWith("/_next/")) {
     return;
   }
 

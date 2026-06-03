@@ -24,6 +24,27 @@ Verification:
 Follow-up:
 - Adjusted coordinate grouping to cluster points within 1 meter, because sub-meter coordinate differences still overlap visually as Leaflet pins at normal mobile zoom.
 
+## Map Pin Spiderfy
+
+Status: completed
+
+Intent:
+- Reduce visual noise from cluster count markers on real PVZ data.
+- Keep nearby/overlapping PVZ individually tappable on mobile.
+- Preserve real coordinates in storage and route links; only shift rendered marker positions on the Leaflet map.
+
+Implementation:
+- Reuse close-coordinate grouping as a layout helper.
+- Render grouped points as separate brand pins spread in a circle around the original coordinate.
+- Remove the cluster count marker and cluster list drawer from the map screen.
+- Update map helper tests to describe spread groups rather than count-marker UX.
+
+Verification:
+- `pnpm vitest run src/lib/map/points.test.ts`
+- `pnpm run typecheck`
+- `pnpm test`
+- `pnpm run lint`
+
 ## Switch Project To pnpm
 
 Status: completed
