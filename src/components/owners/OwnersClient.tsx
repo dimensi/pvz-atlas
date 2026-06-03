@@ -20,12 +20,12 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Drawer,
-  DrawerContent,
   DrawerDescription,
   DrawerFooter,
   DrawerHeader,
   DrawerTitle
 } from "@/components/ui/drawer";
+import { DrawerShell } from "@/components/ui/drawer-shell";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -382,14 +382,44 @@ export default function OwnersClient() {
           }
         }}
       >
-        <DrawerContent className="mx-auto h-auto w-full max-w-[720px] overflow-y-auto border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
-          <DrawerHeader>
-            <DrawerTitle>{activeOwner?.name ?? "Владелец"}</DrawerTitle>
-            <DrawerDescription>
-              {activeOwner ? `${ownerCounts[activeOwner.id] ?? 0} назначенных ПВЗ` : ""}
-            </DrawerDescription>
-          </DrawerHeader>
-          {activeOwner ? (
+        {activeOwner ? (
+          <DrawerShell
+            contentKey={activeOwner.id}
+            header={
+              <DrawerHeader className="text-left">
+                <DrawerTitle>{activeOwner.name}</DrawerTitle>
+                <DrawerDescription>
+                  {`${ownerCounts[activeOwner.id] ?? 0} назначенных ПВЗ`}
+                </DrawerDescription>
+              </DrawerHeader>
+            }
+            footer={
+              <DrawerFooter>
+                {isEditing ? (
+                  <Button type="button" disabled={isSaving} onClick={() => void handleSaveOwner()}>
+                    Сохранить
+                  </Button>
+                ) : (
+                  <Button type="button" onClick={() => setIsEditing(true)}>
+                    <Pencil size={18} aria-hidden="true" />
+                    Редактировать
+                  </Button>
+                )}
+                <Button
+                  type="button"
+                  variant="destructive"
+                  disabled={isSaving || (ownerCounts[activeOwner.id] ?? 0) > 0}
+                  onClick={() => setArchiveCandidate(activeOwner)}
+                >
+                  <Trash2 size={18} aria-hidden="true" />
+                  Скрыть
+                </Button>
+                {(ownerCounts[activeOwner.id] ?? 0) > 0 ? (
+                  <p className="ui-empty-note">Скрыть можно только владельца без назначенных ПВЗ.</p>
+                ) : null}
+              </DrawerFooter>
+            }
+          >
             <div className="ui-form">
               {isEditing ? (
                 <OwnerFields
@@ -433,34 +463,9 @@ export default function OwnersClient() {
                   )}
                 </div>
               </section>
-
-              <DrawerFooter>
-                {isEditing ? (
-                  <Button type="button" disabled={isSaving} onClick={() => void handleSaveOwner()}>
-                    Сохранить
-                  </Button>
-                ) : (
-                  <Button type="button" onClick={() => setIsEditing(true)}>
-                    <Pencil size={18} aria-hidden="true" />
-                    Редактировать
-                  </Button>
-                )}
-                <Button
-                  type="button"
-                  variant="destructive"
-                  disabled={isSaving || (ownerCounts[activeOwner.id] ?? 0) > 0}
-                  onClick={() => setArchiveCandidate(activeOwner)}
-                >
-                  <Trash2 size={18} aria-hidden="true" />
-                  Скрыть
-                </Button>
-                {(ownerCounts[activeOwner.id] ?? 0) > 0 ? (
-                  <p className="ui-empty-note">Скрыть можно только владельца без назначенных ПВЗ.</p>
-                ) : null}
-              </DrawerFooter>
             </div>
-          ) : null}
-        </DrawerContent>
+          </DrawerShell>
+        ) : null}
       </Drawer>
 
       <AlertDialog

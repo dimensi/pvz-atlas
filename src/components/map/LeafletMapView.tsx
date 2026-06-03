@@ -8,14 +8,15 @@ import {
   type LatLngExpression,
   type Marker as LeafletMarker
 } from "leaflet";
-import { MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
+import { CircleMarker, MapContainer, Marker, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { getBrandLabel } from "@/lib/brands";
 import { getMapMarkerClassName, getMapMarkerHtml } from "@/lib/map/marker-style";
-import type { MappablePointItem, MapMarkerCluster } from "@/lib/map/points";
+import type { GeoPoint, MappablePointItem, MapMarkerCluster } from "@/lib/map/points";
 import { POINT_STATUS_LABELS } from "@/lib/points/list";
 
 interface LeafletMapViewProps {
   markerClusters: MapMarkerCluster[];
+  userLocation?: GeoPoint | null;
   onMarkerSelect: (pointId: string) => void;
   onTileError: () => void;
 }
@@ -23,6 +24,7 @@ interface LeafletMapViewProps {
 const DEFAULT_MAP_CENTER: LatLngExpression = [55.751244, 37.618423];
 const DEFAULT_ZOOM = 11;
 const SINGLE_MARKER_ZOOM = 15;
+const USER_LOCATION_ZOOM = 16;
 const OSM_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
 const OSM_ATTRIBUTION =
   '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors';
@@ -120,10 +122,21 @@ function SpreadMarkers({
   );
 }
 
-function MapViewportController({ clusters }: { clusters: MapMarkerCluster[] }) {
+function MapViewportController({
+  clusters,
+  userLocation
+}: {
+  clusters: MapMarkerCluster[];
+  userLocation?: GeoPoint | null;
+}) {
   const map = useMap();
 
   useEffect(() => {
+    if (userLocation) {
+      map.setView([userLocation.lat, userLocation.lon], USER_LOCATION_ZOOM, { animate: true });
+      return;
+    }
+
     if (clusters.length === 0) {
       map.setView(DEFAULT_MAP_CENTER, DEFAULT_ZOOM, { animate: true });
       return;
@@ -140,13 +153,14 @@ function MapViewportController({ clusters }: { clusters: MapMarkerCluster[] }) {
       maxZoom: SINGLE_MARKER_ZOOM,
       padding: [24, 24]
     });
-  }, [map, clusters]);
+  }, [map, clusters, userLocation]);
 
   return null;
 }
 
 export default function LeafletMapView({
   markerClusters,
+  userLocation,
   onMarkerSelect,
   onTileError
 }: LeafletMapViewProps) {
@@ -175,12 +189,25 @@ export default function LeafletMapView({
         eventHandlers={{ tileerror: onTileError }}
         url={OSM_TILE_URL}
       />
-      <MapViewportController clusters={markerClusters} />
+      <MapViewportController clusters={markerClusters} userLocation={userLocation} />
       <SpreadMarkers
         markerClusters={markerClusters}
         markerIcons={markerIcons}
         onMarkerSelect={onMarkerSelect}
       />
+      {userLocation ? (
+        <CircleMarker
+          center={[userLocation.lat, userLocation.lon]}
+          pathOptions={{
+            color: "#0f7df2",
+            fillColor: "#0f7df2",
+            fillOpacity: 0.85,
+            opacity: 1,
+            weight: 3
+          }}
+          radius={8}
+        />
+      ) : null}
     </MapContainer>
   );
 }

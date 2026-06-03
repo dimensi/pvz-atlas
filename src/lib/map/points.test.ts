@@ -105,7 +105,7 @@ describe("map point helpers", () => {
     expect(filtered.map((item) => item.point.id)).toEqual(["no-owner-ozon"]);
   });
 
-  it("filters nearby markers by user location and radius", () => {
+  it("adds distances and sorts markers by user location without hiding far points", () => {
     const split = splitPointCoordinates(
       createMapPointItems(
         [
@@ -117,13 +117,12 @@ describe("map point helpers", () => {
     );
 
     const filtered = filterMapMarkers(split.withCoordinates, {
-      mode: "nearby",
-      userLocation: { lat: 55.751244, lon: 37.618423 },
-      nearbyRadiusMeters: 300
+      userLocation: { lat: 55.751244, lon: 37.618423 }
     });
 
-    expect(filtered.map((item) => item.point.id)).toEqual(["near"]);
+    expect(filtered.map((item) => item.point.id)).toEqual(["near", "far"]);
     expect(filtered[0].distanceMeters).not.toBeNull();
+    expect(filtered[1].distanceMeters).not.toBeNull();
   });
 
   it("returns marker brands", () => {

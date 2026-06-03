@@ -5,11 +5,26 @@ import type { Owner, Point } from "@/lib/data-model/types";
 import { PointActionDialogs } from "./PointActionDialogs";
 
 vi.mock("@/components/ui/drawer", () => ({
-  Drawer: ({ open, children }: { open: boolean; children: React.ReactNode }) =>
-    open ? <div>{children}</div> : null,
+  Drawer: ({
+    open,
+    children
+  }: {
+    open: boolean;
+    children: React.ReactNode;
+    handleOnly?: boolean;
+  }) => (open ? <div>{children}</div> : null),
+  DrawerClose: ({
+    children,
+    asChild
+  }: {
+    children: React.ReactNode;
+    asChild?: boolean;
+  }) => (asChild ? children : <button type="button">{children}</button>),
   DrawerContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DrawerDescription: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
-  DrawerFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  DrawerFooter: ({ children }: { children: React.ReactNode }) => (
+    <footer data-slot="drawer-footer">{children}</footer>
+  ),
   DrawerHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   DrawerTitle: ({ children }: { children: React.ReactNode }) => <h2>{children}</h2>
 }));
@@ -202,6 +217,16 @@ describe("PointActionDialogs details flow", () => {
         status: "active"
       });
     });
+  });
+
+  it("keeps drawer footer outside the scroll region", () => {
+    renderDetailsDialog();
+
+    const scroll = screen.getByTestId("drawer-scroll");
+    const footer = screen.getByTestId("drawer-footer");
+
+    expect(scroll.contains(screen.getByRole("button", { name: "Готово" }))).toBe(false);
+    expect(footer.contains(screen.getByRole("button", { name: "Готово" }))).toBe(true);
   });
 
   it("soft-deletes the point through the shared confirmation dialog", async () => {

@@ -1,10 +1,9 @@
 import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
 import { brandMatchesFilter, createBrandFilterOptions, sortBrandValues } from "@/lib/brands";
 
-export const DEFAULT_NEARBY_RADIUS_METERS = 1200;
 export const DEFAULT_MARKER_CLUSTER_RADIUS_METERS = 1;
 
-export type MapQuickFilter = "all" | "no-owner" | "nearby";
+export type MapQuickFilter = "all" | "no-owner";
 
 export interface GeoPoint {
   lat: number;
@@ -38,7 +37,6 @@ export interface MapMarkerFilters {
   brand?: string;
   status?: PointStatus;
   userLocation?: GeoPoint | null;
-  nearbyRadiusMeters?: number;
 }
 
 function normalizeFilter(value: string | null | undefined): string {
@@ -110,7 +108,6 @@ export function filterMapMarkers(
 ): MappablePointItem[] {
   const mode = filters.mode ?? "all";
   const brand = normalizeFilter(filters.brand);
-  const nearbyRadiusMeters = filters.nearbyRadiusMeters ?? DEFAULT_NEARBY_RADIUS_METERS;
 
   return items
     .map((item) => ({
@@ -121,13 +118,6 @@ export function filterMapMarkers(
     }))
     .filter((item) => {
       if (mode === "no-owner" && item.point.ownerId !== null) {
-        return false;
-      }
-
-      if (
-        mode === "nearby" &&
-        (item.distanceMeters === null || item.distanceMeters > nearbyRadiusMeters)
-      ) {
         return false;
       }
 
@@ -142,7 +132,7 @@ export function filterMapMarkers(
       return true;
     })
     .sort((left, right) => {
-      if (mode === "nearby") {
+      if (filters.userLocation) {
         return (left.distanceMeters ?? 0) - (right.distanceMeters ?? 0);
       }
 

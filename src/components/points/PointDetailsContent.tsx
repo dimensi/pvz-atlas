@@ -6,7 +6,6 @@ import { BrandBadge } from "@/components/points/PointBadges";
 import { PointStatusPicker } from "@/components/points/PointStatusPicker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { DrawerFooter } from "@/components/ui/drawer";
 import { Label } from "@/components/ui/label";
 
 export interface PointDetailsVisibleActions {
@@ -27,7 +26,6 @@ export interface PointDetailsContentProps {
   onAssignOwner?: () => void;
   onEdit: () => void;
   onNote: () => void;
-  onClose: () => void;
 }
 
 export function PointDetailsContent({
@@ -40,8 +38,7 @@ export function PointDetailsContent({
   onStatusSelect,
   onAssignOwner,
   onEdit,
-  onNote,
-  onClose
+  onNote
 }: PointDetailsContentProps) {
   const isClosed = point.status === "closed";
   const showRoute = visibleActions?.route ?? Boolean(routeUrl);
@@ -112,12 +109,6 @@ export function PointDetailsContent({
           </Button>
         ) : null}
       </div>
-
-      <DrawerFooter className="point-details-footer">
-        <Button type="button" variant="secondary" onClick={onClose}>
-          Готово
-        </Button>
-      </DrawerFooter>
     </div>
   );
 }

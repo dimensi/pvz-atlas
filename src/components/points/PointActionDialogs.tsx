@@ -1,6 +1,14 @@
 "use client";
 
-import { useMemo, useState, type FormEvent, type ReactNode } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type FormEvent,
+  type ReactNode
+} from "react";
 import { Check, Plus, Save, Search, Trash2, UserMinus } from "lucide-react";
 import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
 import {
@@ -32,12 +40,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   Drawer,
-  DrawerContent,
+  DrawerClose,
   DrawerDescription,
   DrawerFooter,
   DrawerHeader,
   DrawerTitle
 } from "@/components/ui/drawer";
+import { DrawerShell } from "@/components/ui/drawer-shell";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -76,6 +85,9 @@ interface ActionFormProps {
 
 const OWNER_NONE_VALUE = "__none__";
 const COORDINATE_ERROR_ID = "point-coordinates-edit-error";
+const POINT_EDIT_FORM_ID = "point-edit-form";
+const POINT_NOTE_FORM_ID = "point-note-form";
+const POINT_OWNER_FORM_ID = "point-owner-form";
 
 function sortOwners(owners: Owner[]): Owner[] {
   return [...owners].sort((left, right) =>
@@ -160,7 +172,14 @@ function drawerTitle(action: PointAction | null): string {
   return "Заметка";
 }
 
-function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
+function EditPointForm({
+  close,
+  formId,
+  item,
+  owners,
+  onBusyChange,
+  runMutation
+}: ActionFormProps & { formId: string; onBusyChange: (busy: boolean) => void }) {
   const initialCanonicalBrand = canonicalizeBrand(item.point.brand);
   const [brand, setBrand] = useState<BrandId>(initialCanonicalBrand ?? "other");
   const [city, setCity] = useState(item.point.city);
@@ -174,6 +193,10 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
   const [coordinateValidationError, setCoordinateValidationError] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const sortedOwners = useMemo(() => sortOwners(owners), [owners]);
+
+  useEffect(() => {
+    onBusyChange(isSaving);
+  }, [isSaving, onBusyChange]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -262,7 +285,7 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
   };
 
   return (
-    <form className="ui-form" onSubmit={handleSubmit}>
+    <form id={formId} className="ui-form" onSubmit={handleSubmit}>
       <Field id="point-brand" label="Бренд">
         <BrandSelect labelledBy="point-brand" value={brand} onChange={setBrand} />
       </Field>
@@ -327,20 +350,24 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
           onChange={(event) => setComment(event.target.value)}
         />
       </Field>
-      <DrawerFooter>
-        <Button type="submit" disabled={isSaving}>
-          <Save size={18} aria-hidden="true" />
-          {isSaving ? "Сохраняю..." : "Сохранить"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={close}>
-          Отмена
-        </Button>
-      </DrawerFooter>
     </form>
   );
 }
 
-function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
+interface OwnerFormContextValue {
+  body: ReactNode;
+  footer: ReactNode;
+}
+
+const OwnerFormContext = createContext<OwnerFormContextValue | null>(null);
+
+function OwnerFormProvider({
+  children,
+  close,
+  item,
+  owners,
+  runMutation
+}: ActionFormProps & { children: ReactNode }) {
   const [ownerSearch, setOwnerSearch] = useState("");
   const [ownerPhone, setOwnerPhone] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -404,63 +431,70 @@ function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
     }
   };
 
-  return (
-    <div className="ui-form">
-      {item.point.ownerId !== null ? (
-        <div className="flex justify-end mb-4">
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={isSaving}
-            onClick={() => void assignOwner(null)}
-          >
-            <UserMinus size={18} className="mr-2" aria-hidden="true" />
-            Сбросить владельца
-          </Button>
-        </div>
-      ) : null}
-
-      <Field id="owner-search" label="Поиск владельца">
-        <div className="ui-input-with-icon">
-          <Search size={18} aria-hidden="true" />
-          <Input
-            id="owner-search"
-            placeholder="Имя владельца"
-            value={ownerSearch}
-            onChange={(event) => setOwnerSearch(event.target.value)}
-          />
-        </div>
-      </Field>
-
-      {!exactSearchOwner && ownerSearch.trim().length > 0 ? (
-        <Field id="owner-phone-new" label="Телефон (опционально)">
-          <OwnerPhoneInput id="owner-phone-new" value={ownerPhone} onValueChange={setOwnerPhone} />
-        </Field>
-      ) : null}
-
-      <form className="ui-form" onSubmit={handleCreateAndAssign}>
-        <div className="owner-picker" aria-label="Владелец ПВЗ">
-          {filteredOwners.map((owner) => (
-            <button
-              className={`owner-option ${item.point.ownerId === owner.id ? "owner-option-active" : ""}`}
-              key={owner.id}
-              type="button"
-              disabled={isSaving}
-              onClick={() => void assignOwner(owner.id)}
-            >
-              <span>{owner.name}</span>
-              <span className="owner-option-icon">
-                {item.point.ownerId === owner.id ? <Check size={18} aria-hidden="true" /> : null}
-              </span>
-            </button>
-          ))}
-          {filteredOwners.length === 0 ? (
-            <p className="ui-empty-note">Владелец не найден. Создайте и назначьте его ниже.</p>
+  const value: OwnerFormContextValue = {
+    body: (
+        <form id={POINT_OWNER_FORM_ID} className="ui-form" onSubmit={handleCreateAndAssign}>
+          {item.point.ownerId !== null ? (
+            <div className="flex justify-end mb-4">
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={isSaving}
+                onClick={() => void assignOwner(null)}
+              >
+                <UserMinus size={18} className="mr-2" aria-hidden="true" />
+                Сбросить владельца
+              </Button>
+            </div>
           ) : null}
-        </div>
-        {validationError ? <p className="ui-field-error">{validationError}</p> : null}
+
+          <Field id="owner-search" label="Поиск владельца">
+            <div className="ui-input-with-icon">
+              <Search size={18} aria-hidden="true" />
+              <Input
+                id="owner-search"
+                placeholder="Имя владельца"
+                value={ownerSearch}
+                onChange={(event) => setOwnerSearch(event.target.value)}
+              />
+            </div>
+          </Field>
+
+          {!exactSearchOwner && ownerSearch.trim().length > 0 ? (
+            <Field id="owner-phone-new" label="Телефон (опционально)">
+              <OwnerPhoneInput
+                id="owner-phone-new"
+                value={ownerPhone}
+                onValueChange={setOwnerPhone}
+              />
+            </Field>
+          ) : null}
+
+          <div className="owner-picker" aria-label="Владелец ПВЗ">
+            {filteredOwners.map((owner) => (
+              <button
+                className={`owner-option ${item.point.ownerId === owner.id ? "owner-option-active" : ""}`}
+                key={owner.id}
+                type="button"
+                disabled={isSaving}
+                onClick={() => void assignOwner(owner.id)}
+              >
+                <span>{owner.name}</span>
+                <span className="owner-option-icon">
+                  {item.point.ownerId === owner.id ? <Check size={18} aria-hidden="true" /> : null}
+                </span>
+              </button>
+            ))}
+            {filteredOwners.length === 0 ? (
+              <p className="ui-empty-note">Владелец не найден. Создайте и назначьте его ниже.</p>
+            ) : null}
+          </div>
+          {validationError ? <p className="ui-field-error">{validationError}</p> : null}
+        </form>
+      ),
+      footer: (
         <DrawerFooter>
-          <Button type="submit" disabled={isSaving || !ownerSearch.trim()}>
+          <Button type="submit" form={POINT_OWNER_FORM_ID} disabled={isSaving || !ownerSearch.trim()}>
             <Plus size={18} className="mr-2" aria-hidden="true" />
             {isSaving
               ? "Сохраняю..."
@@ -468,18 +502,41 @@ function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
                 ? `Назначить ${exactSearchOwner.name}`
                 : "Создать и назначить"}
           </Button>
-          <Button type="button" variant="secondary" onClick={close}>
-            Отмена
-          </Button>
+          <DrawerClose asChild>
+            <Button type="button" variant="secondary">
+              Отмена
+            </Button>
+          </DrawerClose>
         </DrawerFooter>
-      </form>
-    </div>
-  );
+      )
+  };
+
+  return <OwnerFormContext.Provider value={value}>{children}</OwnerFormContext.Provider>;
 }
 
-function NoteForm({ close, item, runMutation }: Omit<ActionFormProps, "owners">) {
+function OwnerFormBody() {
+  const context = useContext(OwnerFormContext);
+  return context?.body ?? null;
+}
+
+function OwnerFormFooter() {
+  const context = useContext(OwnerFormContext);
+  return context?.footer ?? null;
+}
+
+function NoteForm({
+  close,
+  formId,
+  item,
+  onBusyChange,
+  runMutation
+}: Omit<ActionFormProps, "owners"> & { formId: string; onBusyChange: (busy: boolean) => void }) {
   const [note, setNote] = useState(item.point.comment ?? "");
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    onBusyChange(isSaving);
+  }, [isSaving, onBusyChange]);
 
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -502,32 +559,22 @@ function NoteForm({ close, item, runMutation }: Omit<ActionFormProps, "owners">)
   };
 
   return (
-    <form className="ui-form" onSubmit={handleSubmit}>
+    <form id={formId} className="ui-form" onSubmit={handleSubmit}>
       <Field id="point-note" label="Заметка">
         <Textarea id="point-note" value={note} onChange={(event) => setNote(event.target.value)} />
       </Field>
-      <DrawerFooter>
-        <Button type="submit" disabled={isSaving}>
-          <Save size={18} aria-hidden="true" />
-          {isSaving ? "Сохраняю..." : "Сохранить"}
-        </Button>
-        <Button type="button" variant="secondary" onClick={close}>
-          Отмена
-        </Button>
-      </DrawerFooter>
     </form>
   );
 }
 
 function DetailsForm({
-  close,
   distanceLabel,
   item,
   routeUrl,
   runMutation,
   setAction,
   visibleDetailActions
-}: ActionFormProps & {
+}: Omit<ActionFormProps, "close" | "owners"> & {
   distanceLabel?: string | null;
   routeUrl?: string | null;
   setAction: (action: PointAction) => void;
@@ -560,7 +607,6 @@ function DetailsForm({
       onAssignOwner={() => setAction("owner")}
       onEdit={() => setAction("edit")}
       onNote={() => setAction("note")}
-      onClose={close}
     />
   );
 }
@@ -577,7 +623,10 @@ export function PointActionDialogs({
 }: PointActionDialogsProps) {
   const close = () => onActionChange(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [pendingDeleteItem, setPendingDeleteItem] = useState<PointActionItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [editBusy, setEditBusy] = useState(false);
+  const [noteBusy, setNoteBusy] = useState(false);
   const resolvedDetailActions: PointDetailsVisibleActions = {
     route: false,
     assignOwner: false,
@@ -586,99 +635,201 @@ export function PointActionDialogs({
     ...visibleDetailActions
   };
 
+  const drawerOpen = Boolean(item) && isActionDrawer(action);
+  const contentKey = item && action ? `${item.point.id}-${action}` : undefined;
+  const useHandleOnly = action === "edit" || action === "owner";
+
   const handleDelete = async () => {
-    if (!item) return;
+    if (!pendingDeleteItem) return;
     setIsDeleting(true);
     const saved = await runMutation(
-      () => updatePointLocal(item.point.id, { deletedAt: new Date().toISOString() }),
+      () => updatePointLocal(pendingDeleteItem.point.id, { deletedAt: new Date().toISOString() }),
       "ПВЗ удален."
     );
     setIsDeleting(false);
     if (saved) {
       setShowDeleteConfirm(false);
+      setPendingDeleteItem(null);
       close();
     }
   };
 
+  const openDeleteConfirm = () => {
+    if (!item) return;
+    setPendingDeleteItem(item);
+    setShowDeleteConfirm(true);
+    close();
+  };
+
+  const drawerHeader = (
+    <DrawerHeader className="text-left flex flex-row items-start justify-between">
+      <div>
+        <DrawerTitle>{drawerTitle(action)}</DrawerTitle>
+        <DrawerDescription className="sr-only">
+          {item ? `${getBrandLabel(item.point.brand)}, ${item.point.address}` : "ПВЗ не выбран"}
+        </DrawerDescription>
+      </div>
+      {action === "details" && item ? (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
+          onClick={openDeleteConfirm}
+          aria-label="Удалить ПВЗ"
+        >
+          <Trash2 size={20} />
+        </Button>
+      ) : null}
+    </DrawerHeader>
+  );
+
+  const renderScrollBody = () => {
+    if (!item || !action) {
+      return null;
+    }
+
+    if (action === "details") {
+      return (
+        <DetailsForm
+          item={item}
+          distanceLabel={distanceLabel}
+          routeUrl={routeUrl}
+          runMutation={runMutation}
+          setAction={onActionChange}
+          visibleDetailActions={resolvedDetailActions}
+        />
+      );
+    }
+
+    if (action === "edit") {
+      return (
+        <EditPointForm
+          formId={POINT_EDIT_FORM_ID}
+          close={close}
+          item={item}
+          owners={owners}
+          runMutation={runMutation}
+          onBusyChange={setEditBusy}
+        />
+      );
+    }
+
+    if (action === "note") {
+      return (
+        <NoteForm
+          formId={POINT_NOTE_FORM_ID}
+          close={close}
+          item={item}
+          runMutation={runMutation}
+          onBusyChange={setNoteBusy}
+        />
+      );
+    }
+
+    return <OwnerFormBody />;
+  };
+
+  const renderFooter = () => {
+    if (!action) {
+      return null;
+    }
+
+    if (action === "details") {
+      return (
+        <DrawerFooter className="point-details-footer">
+          <DrawerClose asChild>
+            <Button type="button" variant="secondary">
+              Готово
+            </Button>
+          </DrawerClose>
+        </DrawerFooter>
+      );
+    }
+
+    if (action === "edit") {
+      return (
+        <DrawerFooter>
+          <Button type="submit" form={POINT_EDIT_FORM_ID} disabled={editBusy}>
+            <Save size={18} aria-hidden="true" />
+            {editBusy ? "Сохраняю..." : "Сохранить"}
+          </Button>
+          <DrawerClose asChild>
+            <Button type="button" variant="secondary">
+              Отмена
+            </Button>
+          </DrawerClose>
+        </DrawerFooter>
+      );
+    }
+
+    if (action === "note") {
+      return (
+        <DrawerFooter>
+          <Button type="submit" form={POINT_NOTE_FORM_ID} disabled={noteBusy}>
+            <Save size={18} aria-hidden="true" />
+            {noteBusy ? "Сохраняю..." : "Сохранить"}
+          </Button>
+          <DrawerClose asChild>
+            <Button type="button" variant="secondary">
+              Отмена
+            </Button>
+          </DrawerClose>
+        </DrawerFooter>
+      );
+    }
+
+    return <OwnerFormFooter />;
+  };
+
+  const drawerBody = (
+    <>
+      {action === "owner" && item ? (
+        <OwnerFormProvider
+          key={`${item.point.id}-owner-provider`}
+          close={close}
+          item={item}
+          owners={owners}
+          runMutation={runMutation}
+        >
+          <DrawerShell
+            header={drawerHeader}
+            contentKey={contentKey}
+            footer={renderFooter()}
+          >
+            {renderScrollBody()}
+          </DrawerShell>
+        </OwnerFormProvider>
+      ) : (
+        <DrawerShell header={drawerHeader} contentKey={contentKey} footer={renderFooter()}>
+          {renderScrollBody()}
+        </DrawerShell>
+      )}
+    </>
+  );
+
   return (
     <>
       <Drawer
-        open={Boolean(item) && isActionDrawer(action)}
+        open={drawerOpen}
+        handleOnly={useHandleOnly}
         onOpenChange={(open) => {
           if (!open) {
             close();
           }
         }}
       >
-        <DrawerContent className="point-drawer-content mx-auto h-auto w-full max-w-[720px] border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
-          <div className="flex-1 overflow-y-auto">
-            <DrawerHeader className="flex flex-row items-start justify-between">
-              <div>
-                <DrawerTitle>{drawerTitle(action)}</DrawerTitle>
-                <DrawerDescription className="sr-only">
-                  {item ? `${getBrandLabel(item.point.brand)}, ${item.point.address}` : "ПВЗ не выбран"}
-                </DrawerDescription>
-              </div>
-              {action === "details" && item ? (
-                <Button 
-                  variant="ghost" 
-                  size="icon" 
-                  className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
-                  onClick={() => setShowDeleteConfirm(true)}
-                  aria-label="Удалить ПВЗ"
-                >
-                  <Trash2 size={20} />
-                </Button>
-              ) : null}
-            </DrawerHeader>
-
-            {action === "details" && item ? (
-              <DetailsForm
-                key={`${item.point.id}-details`}
-                close={close}
-                item={item}
-                owners={owners}
-                distanceLabel={distanceLabel}
-                routeUrl={routeUrl}
-                runMutation={runMutation}
-                setAction={onActionChange}
-                visibleDetailActions={resolvedDetailActions}
-              />
-            ) : null}
-
-            {action === "edit" && item ? (
-              <EditPointForm
-                key={`${item.point.id}-edit`}
-                close={close}
-                item={item}
-                owners={owners}
-                runMutation={runMutation}
-              />
-            ) : null}
-
-            {action === "owner" && item ? (
-              <OwnerForm
-                key={`${item.point.id}-owner`}
-                close={close}
-                item={item}
-                owners={owners}
-                runMutation={runMutation}
-              />
-            ) : null}
-
-            {action === "note" && item ? (
-              <NoteForm
-                key={`${item.point.id}-note`}
-                close={close}
-                item={item}
-                runMutation={runMutation}
-              />
-            ) : null}
-          </div>
-        </DrawerContent>
+        {drawerOpen ? drawerBody : null}
       </Drawer>
 
-      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialog
+        open={showDeleteConfirm}
+        onOpenChange={(open) => {
+          setShowDeleteConfirm(open);
+          if (!open) {
+            setPendingDeleteItem(null);
+          }
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить ПВЗ?</AlertDialogTitle>

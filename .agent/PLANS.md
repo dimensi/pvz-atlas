@@ -1,5 +1,26 @@
 # ExecPlans
 
+## Locate Operator On Map
+
+Status: completed
+
+Intent:
+- Change the map `Рядом` action from a marker filter into a geolocation/zoom action.
+- Keep PVZ markers visible when the operator asks for their own location.
+- Show the operator position on the Leaflet map and keep distance labels available.
+
+Implementation:
+- Stop using `nearby` as a map quick-filter mode in the map client.
+- Keep filtering by all/no-owner/brand/status only, while still computing distances from user location.
+- Pass `userLocation` into the Leaflet view and center/zoom to it when it is set.
+- Render a small current-location marker on the map.
+
+Verification:
+- `pnpm vitest run src/lib/map/points.test.ts`
+- `pnpm run typecheck`
+- `pnpm run lint`
+- `pnpm run build`
+
 ## Unified PVZ Drawer
 
 Status: completed
@@ -198,3 +219,33 @@ Verification:
 - `npm run typecheck`
 - `npm run lint`
 - `npm run build`
+
+## Canonical shadcn Drawer Migration
+
+Status: completed
+
+Intent:
+- Use shadcn/Vaul drawer composition from documentation: header, scroll body, footer outside scroll.
+- Remove Vaul-breaking CSS overrides (`height: fit-content`, hidden `::after`).
+- Share layout via `DrawerShell`; remount scroll body with `key={action}` without remounting `Drawer` root.
+- Close PVZ drawer before delete `AlertDialog`; raise alert z-index above drawer overlays.
+
+Implementation:
+- Sync `src/components/ui/drawer.tsx` from shadcn registry.
+- Add `src/components/ui/drawer-shell.tsx` with `DrawerScrollBody` and `DrawerShell`.
+- Refactor `PointActionDialogs`, `PointDetailsContent`, `OwnersClient`.
+- Remove `.point-drawer-content` hacks from `globals.css`; keep product content styles only.
+- Form footers via `form` attribute + `DrawerClose`; `handleOnly` on owner/edit drawers.
+
+Mobile QA checklist:
+- List: details → edit → cancel / swipe dismiss.
+- Map: details → route / assign owner.
+- Edit: brand/owner Select not clipped.
+- Owner: picker scroll vs drawer dismiss (`handleOnly`).
+- Delete: confirm without double overlay.
+
+Verification:
+- `pnpm vitest run src/components/points/PointActionDialogs.test.tsx src/components/ui/drawer-shell.test.tsx`
+- `pnpm run typecheck`
+- `pnpm run lint`
+- `pnpm test`

@@ -21,7 +21,6 @@ import {
 import { SyncHealthIndicator } from "@/components/sync/SyncHealthIndicator";
 import {
   createMapPointItems,
-  DEFAULT_NEARBY_RADIUS_METERS,
   filterMapMarkers,
   getAvailableMapBrands,
   groupMapMarkersByCoordinates,
@@ -103,8 +102,7 @@ export default function LeafletMapClient() {
         mode,
         brand: brand || undefined,
         status: isKnownStatus(status) ? status : undefined,
-        userLocation,
-        nearbyRadiusMeters: DEFAULT_NEARBY_RADIUS_METERS
+        userLocation
       }),
     [brand, coordinateSplit.withCoordinates, mode, status, userLocation]
   );
@@ -177,11 +175,6 @@ export default function LeafletMapClient() {
   };
 
   const handleNearby = () => {
-    if (mode === "nearby") {
-      setMode("all");
-      return;
-    }
-
     if (!isLocationSupported) {
       setLocationError("Геолокация недоступна в этом браузере.");
       return;
@@ -195,12 +188,10 @@ export default function LeafletMapClient() {
           lat: position.coords.latitude,
           lon: position.coords.longitude
         });
-        setMode("nearby");
         setIsLocating(false);
       },
       () => {
         setLocationError("Не удалось получить геолокацию. Проверьте разрешение браузера.");
-        setMode("all");
         setIsLocating(false);
       },
       { enableHighAccuracy: true, maximumAge: 60000, timeout: 8000 }
@@ -240,7 +231,7 @@ export default function LeafletMapClient() {
             Без владельца
           </button>
           <button
-            className={`filter-chip ${mode === "nearby" ? "filter-chip-active" : ""}`}
+            className="filter-chip"
             type="button"
             disabled={isLocating}
             onClick={handleNearby}
@@ -279,9 +270,10 @@ export default function LeafletMapClient() {
 
       <section className="map-panel" aria-label="Карта ПВЗ">
         <div className="map-canvas">
-          {coordinateSplit.withCoordinates.length > 0 && filteredMarkers.length > 0 ? (
+          {coordinateSplit.withCoordinates.length > 0 ? (
             <LeafletMapView
               markerClusters={markerClusters}
+              userLocation={userLocation}
               onMarkerSelect={openMarkerDetails}
               onTileError={() => setMapError("Не удалось загрузить тайлы OpenStreetMap.")}
             />

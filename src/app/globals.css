@@ -168,6 +168,23 @@ select {
   padding: 18px 16px 92px;
 }
 
+/* Overlay stacking: shadcn drawer uses z-50; keep above app chrome (1200). */
+[data-slot="drawer-overlay"] {
+  z-index: 2000;
+}
+
+[data-slot="drawer-content"] {
+  z-index: 2010;
+}
+
+[data-slot="alert-dialog-overlay"] {
+  z-index: 2100;
+}
+
+[data-slot="alert-dialog-content"] {
+  z-index: 2110;
+}
+
 .bottom-nav {
   position: fixed;
   right: 0;
@@ -870,25 +887,10 @@ select {
   font-size: 13px;
 }
 
-/* Единый контент деталей ПВЗ для drawer списка и карты. */
-.point-drawer-content {
-  height: fit-content !important;
-  min-height: 0 !important;
-}
-
-[data-vaul-drawer][data-vaul-drawer-direction="bottom"]::after {
-  display: none !important;
-}
-
-.point-drawer-content [data-slot="drawer-header"],
-.point-drawer-content .point-details-content {
-  flex: 0 0 auto;
-}
-
 .point-details-content {
   display: grid;
   gap: 12px;
-  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+  padding: 0 16px 16px;
 }
 
 .point-details-heading h3 {
