@@ -923,26 +923,27 @@ select {
   color: var(--muted);
 }
 
-.point-details-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.point-details-meta span {
+.point-details-owner-badge {
   max-width: 100%;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: var(--surface-muted);
-  color: var(--text);
-  font-size: 13px;
-  line-height: 1.3;
+  white-space: normal;
   overflow-wrap: anywhere;
 }
 
 .point-details-note {
+  margin: 0;
+  padding: 8px 12px;
   border-left: 3px solid var(--accent);
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface)) !important;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+/* Кнопка-ссылка «Маршрут»: глобальное a{color:inherit} иначе делает текст тёмным. */
+.point-details-route {
+  color: var(--primary-foreground);
 }
 
 .point-details-actions {

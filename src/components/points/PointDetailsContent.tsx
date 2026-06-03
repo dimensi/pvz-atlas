@@ -41,6 +41,12 @@ export function PointDetailsContent({
       <div className="point-meta-row">
         <BrandBadge brand={point.brand} />
         <StatusBadge status={point.status} />
+        <Badge
+          variant={owner ? "secondary" : "outline"}
+          className="point-details-owner-badge"
+        >
+          {owner?.name ?? "Без владельца"}
+        </Badge>
         {distanceLabel ? <Badge variant="secondary">{distanceLabel}</Badge> : null}
       </div>
 
@@ -49,10 +55,7 @@ export function PointDetailsContent({
         <p>{point.city}</p>
       </div>
 
-      <div className="point-details-meta">
-        <span className="point-details-owner">{owner?.name ?? "Владелец не назначен"}</span>
-        {point.comment ? <span className="point-details-note">{point.comment}</span> : null}
-      </div>
+      {point.comment ? <p className="point-details-note">{point.comment}</p> : null}
 
       <div className="ui-field">
         <Label>Статус</Label>
