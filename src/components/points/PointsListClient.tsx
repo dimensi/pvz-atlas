@@ -9,6 +9,11 @@ import { getPointCoordinates } from "@/lib/map/points";
 import { useOnlineCachedSnapshot } from "@/lib/sync/use-online-cached-snapshot";
 import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
 import {
+  buildPhoneUrl,
+  buildTelegramUrl,
+  formatTelegramLabel
+} from "@/lib/owners/contacts";
+import {
   createPointListItems,
   EDITABLE_POINT_STATUSES,
   filterPointListItems,
@@ -195,11 +200,36 @@ export default function PointsListClient() {
           </div>
         </section>
       ) : (
-        filteredGroups.map((group) => (
+        filteredGroups.map((group) => {
+          const phoneUrl = buildPhoneUrl(group.owner?.phone);
+          const telegramUrl = buildTelegramUrl(group.owner?.telegram);
+          const telegramLabel = formatTelegramLabel(group.owner?.telegram);
+          const hasContacts = Boolean(phoneUrl || telegramUrl);
+
+          return (
           <section className="section point-group" aria-labelledby={`${group.key}-heading`} key={group.key}>
-            <h3 className="section-title" id={`${group.key}-heading`}>
-              <span>{group.title}</span>
-              <span>{group.count}</span>
+            <h3 className="section-title point-group-heading" id={`${group.key}-heading`}>
+              <span className="point-group-title">{group.title}</span>
+              {hasContacts ? (
+                <div className="point-group-contacts">
+                  {phoneUrl && group.owner?.phone ? (
+                    <a className="point-group-contact-link" href={phoneUrl}>
+                      {group.owner.phone}
+                    </a>
+                  ) : null}
+                  {phoneUrl && group.owner?.phone && telegramUrl && telegramLabel ? (
+                    <span className="point-group-contact-sep" aria-hidden="true">
+                      ·
+                    </span>
+                  ) : null}
+                  {telegramUrl && telegramLabel ? (
+                    <a className="point-group-contact-link" href={telegramUrl}>
+                      {telegramLabel}
+                    </a>
+                  ) : null}
+                </div>
+              ) : null}
+              <span className="point-group-count">{group.count}</span>
             </h3>
             <div className="point-card-list">
               {group.items.map((item) => {
@@ -224,9 +254,6 @@ export default function PointsListClient() {
                       </div>
                     </div>
 
-                    <div className="point-details">
-                      <span>{item.owner?.name ?? "Без владельца"}</span>
-                    </div>
                     {item.point.comment ? (
                       <p className="point-card-note">{item.point.comment}</p>
                     ) : null}
@@ -284,7 +311,8 @@ export default function PointsListClient() {
               })}
             </div>
           </section>
-        ))
+          );
+        })
       )}
       <PointActionDialogs
         action={activeAction}

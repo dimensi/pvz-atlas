@@ -1,5 +1,6 @@
 import { conflictSchema, ownerSchema, pointSchema, visitSchema } from "@/lib/data-model/schemas";
 import type { Change, Conflict, Owner, Point, Visit } from "@/lib/data-model/types";
+import { deterministicConflictId } from "./conflict-identity";
 
 type SyncableEntityName = Change["entityName"];
 type SyncableEntity = Point | Owner | Visit;
@@ -15,7 +16,7 @@ export interface RemoteSnapshot extends SyncableCollections {
 
 export interface ApplyChangesOptions {
   clock: () => string;
-  idFactory: () => string;
+  idFactory?: () => string;
 }
 
 export interface ApplyChangesResult {
@@ -89,11 +90,9 @@ function createConflict(
   localValue: unknown,
   remoteValue: unknown,
   now: string,
-  idFactory: () => string,
   remoteVersion: number
 ): Conflict {
-  return conflictSchema.parse({
-    id: idFactory(),
+  const conflict = {
     entityName: change.entityName,
     entityId: change.entityId,
     field,
@@ -107,6 +106,11 @@ function createConflict(
     updatedAt: now,
     deletedAt: null,
     version: 1
+  };
+
+  return conflictSchema.parse({
+    id: deterministicConflictId(conflict),
+    ...conflict
   });
 }
 
@@ -142,8 +146,7 @@ function validateEntity(entityName: SyncableEntityName, entity: unknown): Syncab
 function applyCreate(
   snapshot: RemoteSnapshot,
   change: Change,
-  now: string,
-  idFactory: () => string
+  now: string
 ): { accepted: boolean; conflicts: Conflict[] } {
   const existing = findEntity(snapshot, change.entityName, change.entityId);
   if (existing) {
@@ -154,7 +157,7 @@ function applyCreate(
     return {
       accepted: false,
       conflicts: [
-        createConflict(change, "__record__", change.patch, existing, now, idFactory, existing.version)
+        createConflict(change, "__record__", change.patch, existing, now, existing.version)
       ]
     };
   }
@@ -168,14 +171,13 @@ function applyCreate(
 function applyUpdate(
   snapshot: RemoteSnapshot,
   change: Change,
-  now: string,
-  idFactory: () => string
+  now: string
 ): { accepted: boolean; conflicts: Conflict[] } {
   const current = findEntity(snapshot, change.entityName, change.entityId);
   if (!current) {
     return {
       accepted: false,
-      conflicts: [createConflict(change, "__record__", change.patch, null, now, idFactory, 0)]
+      conflicts: [createConflict(change, "__record__", change.patch, null, now, 0)]
     };
   }
 
@@ -189,7 +191,6 @@ function applyUpdate(
           change.patch.deletedAt,
           "owner_has_assigned_points",
           now,
-          idFactory,
           current.version
         )
       ]
@@ -210,7 +211,6 @@ function applyUpdate(
           localValue,
           (current as unknown as Record<string, unknown>)[field],
           now,
-          idFactory,
           current.version
         )
       );
@@ -232,8 +232,7 @@ function applyUpdate(
 function applyDelete(
   snapshot: RemoteSnapshot,
   change: Change,
-  now: string,
-  idFactory: () => string
+  now: string
 ): { accepted: boolean; conflicts: Conflict[] } {
   const current = findEntity(snapshot, change.entityName, change.entityId);
   if (!current) {
@@ -254,7 +253,6 @@ function applyDelete(
           now,
           "owner_has_assigned_points",
           now,
-          idFactory,
           current.version
         )
       ]
@@ -265,7 +263,7 @@ function applyDelete(
     return {
       accepted: false,
       conflicts: [
-        createConflict(change, "deletedAt", now, current.deletedAt, now, idFactory, current.version)
+        createConflict(change, "deletedAt", now, current.deletedAt, now, current.version)
       ]
     };
   }
@@ -297,10 +295,10 @@ export function applyChangesToSnapshot(
     try {
       const result =
         change.operation === "create"
-          ? applyCreate(nextSnapshot, change, now, options.idFactory)
+          ? applyCreate(nextSnapshot, change, now)
           : change.operation === "update"
-            ? applyUpdate(nextSnapshot, change, now, options.idFactory)
-            : applyDelete(nextSnapshot, change, now, options.idFactory);
+            ? applyUpdate(nextSnapshot, change, now)
+            : applyDelete(nextSnapshot, change, now);
 
       if (result.conflicts.length > 0) {
         nextSnapshot.conflicts.push(...result.conflicts);

@@ -157,6 +157,48 @@ Verification:
 - `npm run lint`
 - `npm run build`
 
+## Persist Resolved Conflicts To Sheets
+
+Status: completed
+
+Intent:
+- Ensure resolving a conflict on `/sync` updates the corresponding `conflicts` sheet row with `resolved_at` and `resolution`.
+- Keep resolution local-first: UI still updates IndexedDB first, then sync pushes the resolved conflict metadata through the server route.
+- Handle the case where accepting the remote value clears the only pending change, so sync still has something to push.
+
+Implementation:
+- Extend the sync push request with locally resolved conflicts.
+- Make the sync engine push when either changes or resolved conflicts are pending.
+- Update the server push route to upsert newer resolved conflict rows instead of only appending newly created conflicts.
+- Add focused tests for resolved-conflict push behavior.
+
+Verification:
+- `pnpm test` passed.
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run lint` is blocked by an existing `react-hooks/set-state-in-effect` error in `src/components/map/LeafletMapClient.tsx:142`.
+
+## Cross-Device Conflict Resolution
+
+Status: completed
+
+Intent:
+- Make identical conflicts resolve across devices, even when they were created independently.
+- Avoid random conflict IDs for future identical conflicts.
+- Keep conflict resolution side effects intact on the second device: accepting remote clears the matching local patch, accepting local retries it from the remote version.
+
+Implementation:
+- Generate deterministic conflict IDs on the server from conflict identity.
+- Add logical conflict matching for pulled resolved conflicts.
+- Apply pulled resolution choices to matching unresolved local conflicts during pull.
+- Cover deterministic IDs and cross-device duplicate resolution with focused tests.
+
+Verification:
+- `pnpm test` passed.
+- `pnpm run typecheck` passed.
+- `pnpm run build` passed.
+- `pnpm run lint` is blocked by the existing `react-hooks/set-state-in-effect` error in `src/components/map/LeafletMapClient.tsx:142`.
+
 ## Quick Point Status Change
 
 Status: completed

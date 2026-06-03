@@ -26,7 +26,8 @@ export const pullResponseSchema = z.object({
 
 export const pushRequestSchema = z.object({
   clientId: z.string().min(1),
-  changes: z.array(changeSchema).max(500)
+  changes: z.array(changeSchema).max(500),
+  resolvedConflicts: z.array(conflictSchema).max(500).optional()
 });
 
 export const rejectedChangeSchema = z.object({

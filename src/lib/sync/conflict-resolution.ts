@@ -3,6 +3,7 @@
 import type { Change, Conflict, Owner, Point, Visit } from "@/lib/data-model/types";
 import { db, type PvzDatabase } from "@/lib/indexeddb/db";
 import { markChangeRecordsApplied, type Clock } from "./changes";
+import { conflictsHaveSameIdentity } from "./conflict-identity";
 
 export type ConflictResolutionChoice = "local" | "remote";
 
@@ -130,6 +131,31 @@ async function acceptLocalValue(
   }
 }
 
+export async function applyConflictResolutionInTransaction(
+  database: PvzDatabase,
+  conflict: Conflict,
+  resolution: ConflictResolutionChoice,
+  now: string
+): Promise<Conflict> {
+  const pendingChanges = await getMatchingPendingChanges(database, conflict);
+  if (resolution === "remote") {
+    await acceptRemoteValue(database, conflict, pendingChanges, now);
+  } else {
+    await acceptLocalValue(database, conflict, pendingChanges, now);
+  }
+
+  const resolvedConflict: Conflict = {
+    ...conflict,
+    resolvedAt: now,
+    resolution,
+    updatedAt: now,
+    version: conflict.version + 1
+  };
+
+  await database.conflicts.put(resolvedConflict);
+  return resolvedConflict;
+}
+
 export async function resolveConflictLocal(
   conflictId: string,
   resolution: ConflictResolutionChoice,
@@ -152,23 +178,7 @@ export async function resolveConflictLocal(
         return conflict;
       }
 
-      const pendingChanges = await getMatchingPendingChanges(database, conflict);
-      if (resolution === "remote") {
-        await acceptRemoteValue(database, conflict, pendingChanges, now);
-      } else {
-        await acceptLocalValue(database, conflict, pendingChanges, now);
-      }
-
-      const resolvedConflict: Conflict = {
-        ...conflict,
-        resolvedAt: now,
-        resolution,
-        updatedAt: now,
-        version: conflict.version + 1
-      };
-
-      await database.conflicts.put(resolvedConflict);
-      return resolvedConflict;
+      return applyConflictResolutionInTransaction(database, conflict, resolution, now);
     }
   );
 }
@@ -195,4 +205,17 @@ export function mergePulledConflicts(
 
     return pulledConflict;
   });
+}
+
+export function findEquivalentUnresolvedConflict(
+  pulledConflict: Conflict,
+  localConflicts: Conflict[]
+): Conflict | undefined {
+  return localConflicts.find(
+    (localConflict) =>
+      localConflict.id !== pulledConflict.id &&
+      localConflict.deletedAt === null &&
+      localConflict.resolvedAt === null &&
+      conflictsHaveSameIdentity(localConflict, pulledConflict)
+  );
 }

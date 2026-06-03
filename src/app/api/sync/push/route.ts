@@ -1,5 +1,5 @@
 import { ZodError } from "zod";
-import type { Change, Owner, Point, Visit } from "@/lib/data-model/types";
+import type { Change, Conflict, Owner, Point, Visit } from "@/lib/data-model/types";
 import { getSheetsSnapshot, invalidateSheetsSnapshot } from "@/lib/sheets/cache";
 import { GoogleSheetsConfigError } from "@/lib/sheets/google-client";
 import { writeSheetsChanges, type SheetsSnapshot, type SheetsWriteSet } from "@/lib/sheets/adapter";
@@ -29,7 +29,8 @@ const buildWriteSet = (
   nextSnapshot: SheetsSnapshot,
   appliedChanges: Change[],
   changesLog: Change[],
-  conflicts: SheetsWriteSet["conflicts"]
+  conflicts: SheetsWriteSet["conflicts"],
+  resolvedConflicts: Conflict[] | undefined
 ): SheetsWriteSet => {
   const points = new Map<string, Point>();
   const owners = new Map<string, Owner>();
@@ -50,16 +51,39 @@ const buildWriteSet = (
     }
   }
 
+  const newConflicts =
+    conflicts?.filter(
+      (conflict) => !originalSnapshot.conflicts.some((existing) => existing.id === conflict.id)
+    ) ?? [];
+  const resolvedConflictsToWrite =
+    resolvedConflicts?.filter((conflict) =>
+      shouldWriteResolvedConflict(originalSnapshot.conflicts, conflict)
+    ) ?? [];
+
   return {
     points: [...points.values()],
     owners: [...owners.values()],
     visits: [...visits.values()],
     changesLog,
-    conflicts: conflicts?.filter(
-      (conflict) => !originalSnapshot.conflicts.some((existing) => existing.id === conflict.id)
-    )
+    conflicts: [...newConflicts, ...resolvedConflictsToWrite]
   };
 };
+
+function shouldWriteResolvedConflict(existingConflicts: Conflict[], incoming: Conflict): boolean {
+  if (!incoming.resolvedAt) {
+    return false;
+  }
+
+  const existing = existingConflicts.find((conflict) => conflict.id === incoming.id);
+  if (!existing) {
+    return true;
+  }
+
+  const incomingUpdatedAt = Date.parse(incoming.updatedAt);
+  const existingUpdatedAt = Date.parse(existing.updatedAt);
+
+  return incoming.version >= existing.version && incomingUpdatedAt >= existingUpdatedAt;
+}
 
 const hasConflictForChange = (
   conflicts: ReturnType<typeof applyChangesToSnapshot>["conflicts"],
@@ -102,7 +126,8 @@ export async function POST(request: Request) {
       nextSnapshot,
       applied.appliedChanges,
       applied.appliedChanges,
-      applied.conflicts
+      applied.conflicts,
+      payload.resolvedConflicts
     );
 
     await writeSheetsChanges(snapshot, writeSet);

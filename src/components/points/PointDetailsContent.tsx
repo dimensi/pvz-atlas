@@ -7,6 +7,11 @@ import { PointStatusPicker } from "@/components/points/PointStatusPicker";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import {
+  buildPhoneUrl,
+  buildTelegramUrl,
+  formatTelegramLabel
+} from "@/lib/owners/contacts";
 
 export interface PointDetailsVisibleActions {
   route?: boolean;
@@ -45,18 +50,45 @@ export function PointDetailsContent({
   const showAssignOwner = visibleActions?.assignOwner ?? Boolean(onAssignOwner);
   const showNote = visibleActions?.note ?? true;
   const showEdit = visibleActions?.edit ?? true;
+  const phoneUrl = buildPhoneUrl(owner?.phone);
+  const telegramUrl = buildTelegramUrl(owner?.telegram);
+  const telegramLabel = formatTelegramLabel(owner?.telegram);
 
   return (
     <div className="point-details-content">
       <div className="point-meta-row">
         <BrandBadge brand={point.brand} />
-        <Badge
-          variant={owner ? "secondary" : "outline"}
-          className="point-details-owner-badge"
-        >
-          {owner?.name ?? "Без владельца"}
-        </Badge>
         {distanceLabel ? <Badge variant="secondary">{distanceLabel}</Badge> : null}
+      </div>
+
+      <div className="point-details-owner">
+        {owner ? (
+          <>
+            <span className="point-details-owner-name">{owner.name}</span>
+            {phoneUrl && owner.phone ? (
+              <>
+                <span className="point-group-contact-sep" aria-hidden="true">
+                  ·
+                </span>
+                <a className="point-group-contact-link" href={phoneUrl}>
+                  {owner.phone}
+                </a>
+              </>
+            ) : null}
+            {telegramUrl && telegramLabel ? (
+              <>
+                <span className="point-group-contact-sep" aria-hidden="true">
+                  ·
+                </span>
+                <a className="point-group-contact-link" href={telegramUrl}>
+                  {telegramLabel}
+                </a>
+              </>
+            ) : null}
+          </>
+        ) : (
+          <span className="point-details-owner-empty">Без владельца</span>
+        )}
       </div>
 
       <div className="point-details-heading">

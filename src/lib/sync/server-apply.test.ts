@@ -89,7 +89,6 @@ describe("server sync application", () => {
     expect(result.acceptedChangeIds).toEqual([]);
     expect(result.conflicts).toEqual([
       expect.objectContaining({
-        id: "conflict-1",
         entityName: "point",
         entityId: "point-1",
         field: "ownerId",
@@ -100,6 +99,22 @@ describe("server sync application", () => {
       })
     ]);
     expect(result.snapshot.points[0].ownerId).toBe("owner-2");
+  });
+
+  it("uses the same id for identical conflicts created by different clients", () => {
+    const remote = { ...point, ownerId: "owner-2", version: 4 };
+    const first = applyChangesToSnapshot(
+      snapshot({ points: [remote] }),
+      [change({ id: "change-client-1", clientId: "client-1" })],
+      { clock: () => later, idFactory: () => "random-1" }
+    );
+    const second = applyChangesToSnapshot(
+      snapshot({ points: [remote] }),
+      [change({ id: "change-client-2", clientId: "client-2" })],
+      { clock: () => later, idFactory: () => "random-2" }
+    );
+
+    expect(first.conflicts[0].id).toBe(second.conflicts[0].id);
   });
 
   it("accepts a version mismatch when the patched field is already applied remotely", () => {

@@ -38,6 +38,7 @@ export interface PointGroup {
   key: string;
   ownerId: string | null;
   title: string;
+  owner: Owner | null;
   count: number;
   items: PointListItem[];
 }
@@ -130,6 +131,7 @@ export function groupPointListItems(items: PointListItem[]): PointGroup[] {
       key: NO_OWNER_GROUP_KEY,
       ownerId: null,
       title: NO_OWNER_GROUP_TITLE,
+      owner: null,
       count: noOwnerItems.length,
       items: noOwnerItems
     });
@@ -156,6 +158,7 @@ export function groupPointListItems(items: PointListItem[]): PointGroup[] {
       key: `owner-${ownerId}`,
       ownerId,
       title: sortedItems[0].owner?.name ?? "Владелец",
+      owner: sortedItems[0].owner ?? null,
       count: sortedItems.length,
       items: sortedItems
     });

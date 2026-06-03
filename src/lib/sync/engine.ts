@@ -1,6 +1,6 @@
 "use client";
 
-import type { Change } from "@/lib/data-model/types";
+import type { Change, Conflict } from "@/lib/data-model/types";
 import { db, type PvzDatabase } from "@/lib/indexeddb/db";
 import {
   pullSync as defaultPullSync,
@@ -8,7 +8,11 @@ import {
 } from "@/lib/api/sync-api";
 import type { PullResponse, PushRequest, PushResponse } from "@/lib/api/types";
 import { markChangeRecordsApplied } from "./changes";
-import { mergePulledConflicts } from "./conflict-resolution";
+import {
+  applyConflictResolutionInTransaction,
+  findEquivalentUnresolvedConflict,
+  mergePulledConflicts
+} from "./conflict-resolution";
 
 export interface SyncApiClient {
   pullSync: typeof defaultPullSync;
@@ -64,7 +68,14 @@ async function applyPullResponse(
 
   await database.transaction(
     "rw",
-    [database.points, database.owners, database.visits, database.conflicts, database.meta],
+    [
+      database.points,
+      database.owners,
+      database.visits,
+      database.changes,
+      database.conflicts,
+      database.meta
+    ],
     async () => {
       const cleanPoints = response.points.filter((point) => !dirtyPoints.has(point.id));
       const cleanOwners = response.owners.filter((owner) => !dirtyOwners.has(owner.id));
@@ -80,16 +91,38 @@ async function applyPullResponse(
         await database.visits.bulkPut(cleanVisits);
       }
       if (response.conflicts && response.conflicts.length > 0) {
-        const existingConflicts = await database.conflicts.bulkGet(
-          response.conflicts.map((conflict) => conflict.id)
-        );
+        const existingConflicts = await database.conflicts
+          .filter((conflict) => conflict.deletedAt === null)
+          .toArray();
+        const existingById = new Map(existingConflicts.map((conflict) => [conflict.id, conflict]));
+
+        for (const pulledConflict of response.conflicts) {
+          if (
+            !pulledConflict.resolvedAt ||
+            !pulledConflict.resolution ||
+            pulledConflict.resolution === "manual"
+          ) {
+            continue;
+          }
+
+          const localConflict =
+            existingById.get(pulledConflict.id) ??
+            findEquivalentUnresolvedConflict(pulledConflict, existingConflicts);
+
+          if (!localConflict || localConflict.resolvedAt) {
+            continue;
+          }
+
+          await applyConflictResolutionInTransaction(
+            database,
+            localConflict,
+            pulledConflict.resolution,
+            pulledConflict.resolvedAt
+          );
+        }
+
         await database.conflicts.bulkPut(
-          mergePulledConflicts(
-            response.conflicts,
-            existingConflicts.filter((conflict): conflict is NonNullable<typeof conflict> =>
-              Boolean(conflict)
-            )
-          )
+          mergePulledConflicts(response.conflicts, existingConflicts)
         );
       }
 
@@ -125,6 +158,14 @@ async function getPushableLocalChanges(database: PvzDatabase): Promise<Change[]>
   const conflictedChangeKeys = new Set(conflicts.map(changeKey));
 
   return changes.filter((change) => !conflictedChangeKeys.has(changeKey(change)));
+}
+
+async function getResolvedLocalConflicts(database: PvzDatabase): Promise<Conflict[]> {
+  const conflicts = await database.conflicts
+    .filter((conflict) => conflict.deletedAt === null && conflict.resolvedAt !== null)
+    .toArray();
+
+  return conflicts.sort((left, right) => left.updatedAt.localeCompare(right.updatedAt));
 }
 
 async function applyPushResponse(database: PvzDatabase, response: PushResponse): Promise<void> {
@@ -208,9 +249,18 @@ export async function runSync(options: RunSyncOptions = {}): Promise<RunSyncResu
   const firstPull = await api.pullSync(since);
   await applyPullResponse(database, firstPull, pendingBeforePull);
 
-  const changes = await getPushableLocalChanges(database);
-  const pushRequest: PushRequest = { clientId, changes };
-  const pushed = changes.length > 0 ? await api.pushSync(pushRequest) : null;
+  const [changes, resolvedConflicts] = await Promise.all([
+    getPushableLocalChanges(database),
+    getResolvedLocalConflicts(database)
+  ]);
+  const pushRequest: PushRequest =
+    resolvedConflicts.length > 0
+      ? { clientId, changes, resolvedConflicts }
+      : { clientId, changes };
+  const pushed =
+    changes.length > 0 || resolvedConflicts.length > 0
+      ? await api.pushSync(pushRequest)
+      : null;
   if (pushed) {
     await applyPushResponse(database, pushed);
   }
@@ -237,9 +287,12 @@ async function refreshOnlineCacheNow(
     pullSync: defaultPullSync,
     pushSync: defaultPushSync
   };
-  const changes = await getPushableLocalChanges(database);
+  const [changes, resolvedConflicts] = await Promise.all([
+    getPushableLocalChanges(database),
+    getResolvedLocalConflicts(database)
+  ]);
 
-  if (changes.length > 0) {
+  if (changes.length > 0 || resolvedConflicts.length > 0) {
     return {
       mode: "sync",
       pulled: null,
