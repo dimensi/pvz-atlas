@@ -1224,9 +1224,9 @@ select {
 
 /* Цвета статуса в picker — без pill-стиля .point-status, чтобы не ломать ButtonGroup. */
 .point-status-picker [data-slot="button"].point-status-picker-option-selected.point-status-picker-option-new {
-  background: #edf2f7;
-  color: #475569;
-  border-color: #cbd5e1;
+  background: #e2e8f0;
+  color: #0f172a;
+  border-color: #94a3b8;
 }
 
 .point-status-picker [data-slot="button"].point-status-picker-option-selected.point-status-picker-option-active {

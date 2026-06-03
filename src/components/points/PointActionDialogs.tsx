@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { Check, Plus, Save, Search } from "lucide-react";
+import { Check, Plus, Save, Search, Trash2, UserMinus } from "lucide-react";
 import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
 import {
   BRAND_OPTIONS,
@@ -13,11 +13,20 @@ import {
 import { normalizeAddressPart } from "@/lib/data-model/source-key";
 import { createOwnerLocal, updatePointLocal } from "@/lib/sync/local-actions";
 import { parsePointCoordinatesText } from "@/lib/points/coordinates";
-import { getPointCoordinates } from "@/lib/map/points";
-import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
 import { PointDetailsContent } from "@/components/points/PointDetailsContent";
 import { PointStatusPicker } from "@/components/points/PointStatusPicker";
+import { OwnerPhoneInput } from "@/components/owners/OwnerPhoneInput";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle
+} from "@/components/ui/alert-dialog";
 import {
   Drawer,
   DrawerContent,
@@ -327,6 +336,7 @@ function EditPointForm({ close, item, owners, runMutation }: ActionFormProps) {
 
 function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
   const [ownerSearch, setOwnerSearch] = useState("");
+  const [ownerPhone, setOwnerPhone] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const sortedOwners = useMemo(() => sortOwners(owners), [owners]);
@@ -345,6 +355,7 @@ function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
 
   const assignOwner = async (ownerId: string | null) => {
     if (ownerId === item.point.ownerId) {
+      close();
       return;
     }
 
@@ -356,7 +367,9 @@ function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
     );
     setIsSaving(false);
 
-    return saved;
+    if (saved) {
+      close();
+    }
   };
 
   const handleCreateAndAssign = async (event: FormEvent<HTMLFormElement>) => {
@@ -375,16 +388,32 @@ function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
     setValidationError(null);
     setIsSaving(true);
     const saved = await runMutation(async () => {
-      const owner = await createOwnerLocal({ name });
+      const owner = await createOwnerLocal({ name, phone: ownerPhone.trim() || null });
       await updatePointLocal(item.point.id, { ownerId: owner.id });
     }, "Сохранено на устройстве.");
     setIsSaving(false);
 
-    return saved;
+    if (saved) {
+      close();
+    }
   };
 
   return (
     <div className="ui-form">
+      {item.point.ownerId !== null ? (
+        <div className="flex justify-end mb-4">
+          <Button
+            type="button"
+            variant="destructive"
+            disabled={isSaving}
+            onClick={() => void assignOwner(null)}
+          >
+            <UserMinus size={18} className="mr-2" aria-hidden="true" />
+            Сбросить владельца
+          </Button>
+        </div>
+      ) : null}
+
       <Field id="owner-search" label="Поиск владельца">
         <div className="ui-input-with-icon">
           <Search size={18} aria-hidden="true" />
@@ -397,19 +426,14 @@ function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
         </div>
       </Field>
 
+      {!exactSearchOwner && ownerSearch.trim().length > 0 ? (
+        <Field id="owner-phone-new" label="Телефон (опционально)">
+          <OwnerPhoneInput id="owner-phone-new" value={ownerPhone} onValueChange={setOwnerPhone} />
+        </Field>
+      ) : null}
+
       <form className="ui-form" onSubmit={handleCreateAndAssign}>
         <div className="owner-picker" aria-label="Владелец ПВЗ">
-          <button
-            className={`owner-option ${item.point.ownerId === null ? "owner-option-active" : ""}`}
-            type="button"
-            disabled={isSaving}
-            onClick={() => void assignOwner(null)}
-          >
-            <span>Без владельца</span>
-            <span className="owner-option-icon">
-              {item.point.ownerId === null ? <Check size={18} aria-hidden="true" /> : null}
-            </span>
-          </button>
           {filteredOwners.map((owner) => (
             <button
               className={`owner-option ${item.point.ownerId === owner.id ? "owner-option-active" : ""}`}
@@ -431,7 +455,7 @@ function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
         {validationError ? <p className="ui-field-error">{validationError}</p> : null}
         <DrawerFooter>
           <Button type="submit" disabled={isSaving || !ownerSearch.trim()}>
-            <Plus size={18} aria-hidden="true" />
+            <Plus size={18} className="mr-2" aria-hidden="true" />
             {isSaving
               ? "Сохраняю..."
               : exactSearchOwner
@@ -439,7 +463,7 @@ function OwnerForm({ close, item, owners, runMutation }: ActionFormProps) {
                 : "Создать и назначить"}
           </Button>
           <Button type="button" variant="secondary" onClick={close}>
-            Готово
+            Отмена
           </Button>
         </DrawerFooter>
       </form>
@@ -489,8 +513,9 @@ function NoteForm({ close, item, runMutation }: Omit<ActionFormProps, "owners">)
   );
 }
 
-function DetailsForm({ close, item, runMutation, setAction }: ActionFormProps & {
+function DetailsForm({ close, item, runMutation, setAction, onDelete }: ActionFormProps & {
   setAction: (action: PointAction) => void;
+  onDelete: () => void;
 }) {
   const [isSavingStatus, setIsSavingStatus] = useState(false);
 
@@ -507,21 +532,15 @@ function DetailsForm({ close, item, runMutation, setAction }: ActionFormProps & 
     setIsSavingStatus(false);
   };
 
-  const coordinates = getPointCoordinates(item.point);
-  const routeUrl = coordinates
-    ? buildYandexRouteUrl({ lat: coordinates.lat, lon: coordinates.lon })
-    : null;
-
   return (
     <PointDetailsContent
       point={item.point}
       owner={item.owner}
-      routeUrl={routeUrl}
       isSavingStatus={isSavingStatus}
       onStatusSelect={handleStatusSelect}
-      onAssignOwner={() => setAction("owner")}
       onEdit={() => setAction("edit")}
       onNote={() => setAction("note")}
+      onDelete={onDelete}
       onClose={close}
     />
   );
@@ -535,6 +554,22 @@ export function PointActionDialogs({
   runMutation
 }: PointActionDialogsProps) {
   const close = () => onActionChange(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  const handleDelete = async () => {
+    if (!item) return;
+    setIsDeleting(true);
+    const saved = await runMutation(
+      () => updatePointLocal(item.point.id, { deletedAt: new Date().toISOString() }),
+      "ПВЗ удален."
+    );
+    setIsDeleting(false);
+    if (saved) {
+      setShowDeleteConfirm(false);
+      close();
+    }
+  };
 
   return (
     <>
@@ -546,56 +581,95 @@ export function PointActionDialogs({
           }
         }}
       >
-        <DrawerContent className="point-drawer-content mx-auto h-auto w-full max-w-[720px] overflow-y-auto border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
-          <DrawerHeader>
-            <DrawerTitle>{drawerTitle(action)}</DrawerTitle>
-            <DrawerDescription>
-              {item ? `${getBrandLabel(item.point.brand)}, ${item.point.address}` : "ПВЗ не выбран"}
-            </DrawerDescription>
-          </DrawerHeader>
+        <DrawerContent className="point-drawer-content mx-auto h-auto w-full max-w-[720px] border-x data-[vaul-drawer-direction=bottom]:mt-0 data-[vaul-drawer-direction=bottom]:max-h-[calc(100dvh-80px)]">
+          <div className="flex-1 overflow-y-auto">
+            <DrawerHeader className="flex flex-row items-start justify-between">
+              <div>
+                <DrawerTitle>{drawerTitle(action)}</DrawerTitle>
+                <DrawerDescription className="sr-only">
+                  {item ? `${getBrandLabel(item.point.brand)}, ${item.point.address}` : "ПВЗ не выбран"}
+                </DrawerDescription>
+              </div>
+              {action === "details" && item ? (
+                <Button 
+                  variant="ghost" 
+                  size="icon" 
+                  className="text-destructive hover:text-destructive/90 hover:bg-destructive/10"
+                  onClick={() => setShowDeleteConfirm(true)}
+                  aria-label="Удалить ПВЗ"
+                >
+                  <Trash2 size={20} />
+                </Button>
+              ) : null}
+            </DrawerHeader>
 
-          {action === "details" && item ? (
-            <DetailsForm
-              key={`${item.point.id}-details`}
-              close={close}
-              item={item}
-              owners={owners}
-              runMutation={runMutation}
-              setAction={onActionChange}
-            />
-          ) : null}
+            {action === "details" && item ? (
+              <DetailsForm
+                key={`${item.point.id}-details`}
+                close={close}
+                item={item}
+                owners={owners}
+                runMutation={runMutation}
+                setAction={onActionChange}
+                onDelete={() => setShowDeleteConfirm(true)}
+              />
+            ) : null}
 
-          {action === "edit" && item ? (
-            <EditPointForm
-              key={`${item.point.id}-edit`}
-              close={close}
-              item={item}
-              owners={owners}
-              runMutation={runMutation}
-            />
-          ) : null}
+            {action === "edit" && item ? (
+              <EditPointForm
+                key={`${item.point.id}-edit`}
+                close={close}
+                item={item}
+                owners={owners}
+                runMutation={runMutation}
+              />
+            ) : null}
 
-          {action === "owner" && item ? (
-            <OwnerForm
-              key={`${item.point.id}-owner`}
-              close={close}
-              item={item}
-              owners={owners}
-              runMutation={runMutation}
-            />
-          ) : null}
+            {action === "owner" && item ? (
+              <OwnerForm
+                key={`${item.point.id}-owner`}
+                close={close}
+                item={item}
+                owners={owners}
+                runMutation={runMutation}
+              />
+            ) : null}
 
-          {action === "note" && item ? (
-            <NoteForm
-              key={`${item.point.id}-note`}
-              close={close}
-              item={item}
-              runMutation={runMutation}
-            />
-          ) : null}
-
+            {action === "note" && item ? (
+              <NoteForm
+                key={`${item.point.id}-note`}
+                close={close}
+                item={item}
+                runMutation={runMutation}
+              />
+            ) : null}
+          </div>
         </DrawerContent>
       </Drawer>
+
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Удалить ПВЗ?</AlertDialogTitle>
+            <AlertDialogDescription>
+              ПВЗ будет скрыт на устройстве. Это действие можно отменить только пересинхронизацией.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isDeleting}>Отмена</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={isDeleting}
+              onClick={(event) => {
+                event.preventDefault();
+                void handleDelete();
+              }}
+            >
+              Удалить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

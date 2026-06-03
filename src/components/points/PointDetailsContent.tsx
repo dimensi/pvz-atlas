@@ -1,6 +1,6 @@
 "use client";
 
-import { MessageSquare, Navigation, Pencil, UserPlus } from "lucide-react";
+import { MessageSquare, Navigation, Pencil, UserPlus, Trash2 } from "lucide-react";
 import type { Owner, Point, PointStatus } from "@/lib/data-model/types";
 import { BrandBadge, StatusBadge } from "@/components/points/PointBadges";
 import { PointStatusPicker } from "@/components/points/PointStatusPicker";
@@ -19,6 +19,7 @@ export interface PointDetailsContentProps {
   onAssignOwner?: () => void;
   onEdit: () => void;
   onNote: () => void;
+  onDelete?: () => void;
   onClose: () => void;
 }
 
@@ -32,6 +33,7 @@ export function PointDetailsContent({
   onAssignOwner,
   onEdit,
   onNote,
+  onDelete,
   onClose
 }: PointDetailsContentProps) {
   const isClosed = point.status === "closed";
@@ -40,7 +42,6 @@ export function PointDetailsContent({
     <div className="point-details-content">
       <div className="point-meta-row">
         <BrandBadge brand={point.brand} />
-        <StatusBadge status={point.status} />
         <Badge
           variant={owner ? "secondary" : "outline"}
           className="point-details-owner-badge"
