@@ -80,7 +80,7 @@ print('PVZ_BASIC_AUTH_PASSWORD=' + quote(values['PVZ_BASIC_AUTH_PASSWORD']))
 PY
 . ./.caddy-basic-auth.env
 rm ./.caddy-basic-auth.env
-auth_hash=\$(docker run --rm caddy:latest caddy hash-password --algorithm bcrypt --plaintext \"\${PVZ_BASIC_AUTH_PASSWORD}\")
+auth_hash=\$(docker exec '${CADDY_CONTAINER}' caddy hash-password --algorithm bcrypt --plaintext \"\${PVZ_BASIC_AUTH_PASSWORD}\")
 umask 077
 printf '%s %s\n' \"\${PVZ_BASIC_AUTH_USER}\" \"\${auth_hash}\" > '${BASIC_AUTH_FILE}'"
 

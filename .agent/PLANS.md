@@ -1,5 +1,28 @@
 # ExecPlans
 
+## Switch Project To pnpm
+
+Status: completed
+
+Intent:
+- Make pnpm the canonical package manager for local development, Docker builds, and deployment scripts.
+- Replace npm lockfile/install commands with `pnpm-lock.yaml` and frozen pnpm installs.
+- Keep runtime behavior unchanged.
+
+Implementation:
+- Add `packageManager` metadata to `package.json`.
+- Generate `pnpm-lock.yaml`.
+- Update `Dockerfile` to install dependencies with Corepack-managed pnpm.
+- Update docs/scripts references that mention npm package-manager commands.
+
+Verification:
+- `pnpm install --frozen-lockfile`
+- `pnpm test`
+- `pnpm run typecheck`
+- `pnpm run lint`
+- `pnpm run build`
+- `docker build -t pvz-atlas:pnpm-check .`
+
 ## Conflict Resolution From Sync Page
 
 Status: completed
