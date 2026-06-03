@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   divIcon,
   latLngBounds,
@@ -16,6 +16,8 @@ import { POINT_STATUS_LABELS } from "@/lib/points/list";
 
 interface LeafletMapViewProps {
   markerClusters: MapMarkerCluster[];
+  /** Changes when map filters change; triggers auto-fit, not data-only marker updates. */
+  autoFitKey: string;
   userLocation?: GeoPoint | null;
   onMarkerSelect: (pointId: string) => void;
   onTileError: () => void;
@@ -123,13 +125,16 @@ function SpreadMarkers({
 }
 
 function MapViewportController({
+  autoFitKey,
   clusters,
   userLocation
 }: {
+  autoFitKey: string;
   clusters: MapMarkerCluster[];
   userLocation?: GeoPoint | null;
 }) {
   const map = useMap();
+  const lastAutoFitKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (userLocation) {
@@ -138,9 +143,16 @@ function MapViewportController({
     }
 
     if (clusters.length === 0) {
+      lastAutoFitKeyRef.current = null;
       map.setView(DEFAULT_MAP_CENTER, DEFAULT_ZOOM, { animate: true });
       return;
     }
+
+    if (lastAutoFitKeyRef.current === autoFitKey) {
+      return;
+    }
+
+    lastAutoFitKeyRef.current = autoFitKey;
 
     if (clusters.length === 1) {
       map.setView(clusterPosition(clusters[0]), SINGLE_MARKER_ZOOM, { animate: true });
@@ -153,12 +165,13 @@ function MapViewportController({
       maxZoom: SINGLE_MARKER_ZOOM,
       padding: [24, 24]
     });
-  }, [map, clusters, userLocation]);
+  }, [autoFitKey, clusters, map, userLocation]);
 
   return null;
 }
 
 export default function LeafletMapView({
+  autoFitKey,
   markerClusters,
   userLocation,
   onMarkerSelect,
@@ -189,7 +202,11 @@ export default function LeafletMapView({
         eventHandlers={{ tileerror: onTileError }}
         url={OSM_TILE_URL}
       />
-      <MapViewportController clusters={markerClusters} userLocation={userLocation} />
+      <MapViewportController
+        autoFitKey={autoFitKey}
+        clusters={markerClusters}
+        userLocation={userLocation}
+      />
       <SpreadMarkers
         markerClusters={markerClusters}
         markerIcons={markerIcons}

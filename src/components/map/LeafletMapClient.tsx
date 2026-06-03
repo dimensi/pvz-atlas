@@ -34,8 +34,6 @@ import {
   POINT_STATUS_LABELS
 } from "@/lib/points/list";
 import { useOnlineCachedSnapshot } from "@/lib/sync/use-online-cached-snapshot";
-import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
-
 const LeafletMapView = dynamic(() => import("./LeafletMapView"), {
   ssr: false,
   loading: () => <div className="map-canvas map-canvas-loading" />
@@ -110,6 +108,7 @@ export default function LeafletMapClient() {
     () => groupMapMarkersByCoordinates(filteredMarkers),
     [filteredMarkers]
   );
+  const mapAutoFitKey = `${mode}|${brand}|${status}`;
   const dialogItem = useMemo(() => {
     if (!activeItem) {
       return null;
@@ -124,12 +123,25 @@ export default function LeafletMapClient() {
 
     return filteredMarkers.find((item) => item.point.id === activeItem.point.id) ?? null;
   }, [activeItem, filteredMarkers]);
-  const activeRouteUrl = activeMapItem
-    ? buildYandexRouteUrl({
-        lat: activeMapItem.coordinates.lat,
-        lon: activeMapItem.coordinates.lon
-      })
-    : null;
+
+  useEffect(() => {
+    if (!activeItem) {
+      return;
+    }
+
+    const freshItem = allItems.find((entry) => entry.point.id === activeItem.point.id);
+    if (!freshItem) {
+      return;
+    }
+
+    if (
+      freshItem.point.updatedAt !== activeItem.point.updatedAt ||
+      freshItem.point.ownerId !== activeItem.point.ownerId ||
+      freshItem.owner?.id !== activeItem.owner?.id
+    ) {
+      setActiveItem(freshItem);
+    }
+  }, [activeItem, allItems]);
   const hasLocalRows = state.points.length > 0 || state.owners.length > 0 || state.visits.length > 0;
   const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
   const error = mutationError ?? cacheError;
@@ -272,6 +284,7 @@ export default function LeafletMapClient() {
         <div className="map-canvas">
           {coordinateSplit.withCoordinates.length > 0 ? (
             <LeafletMapView
+              autoFitKey={mapAutoFitKey}
               markerClusters={markerClusters}
               userLocation={userLocation}
               onMarkerSelect={openMarkerDetails}
@@ -348,12 +361,18 @@ export default function LeafletMapClient() {
         item={dialogItem}
         owners={availableOwners}
         distanceLabel={formatDistance(activeMapItem?.distanceMeters ?? null)}
-        routeUrl={activeRouteUrl}
-        visibleDetailActions={{ route: true, assignOwner: true }}
+        visibleDetailActions={{ assignOwner: true }}
         onActionChange={(nextAction) => {
           setActiveAction(nextAction);
           if (nextAction === null) {
             setActiveItem(null);
+            return;
+          }
+
+          if (nextAction === "details" && activeItem) {
+            setActiveItem(
+              allItems.find((entry) => entry.point.id === activeItem.point.id) ?? activeItem
+            );
           }
         }}
         runMutation={runMutation}

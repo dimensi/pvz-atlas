@@ -374,6 +374,7 @@ export default function OwnersClient() {
       )}
 
       <Drawer
+        handleOnly
         open={Boolean(activeOwner)}
         onOpenChange={(open) => {
           if (!open) {

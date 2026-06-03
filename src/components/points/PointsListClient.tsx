@@ -1,12 +1,11 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Check, MapPinned, MoreHorizontal, Search, UserPlus } from "lucide-react";
+import { ListChecks, MapPinned, Pencil, Search, UserPlus } from "lucide-react";
 import { toast } from "sonner";
 import { getBrandLabel, getBrandPillClassName } from "@/lib/brands";
-import type { PointStatus, Visit } from "@/lib/data-model/types";
+import type { PointStatus } from "@/lib/data-model/types";
 import { getPointCoordinates } from "@/lib/map/points";
-import { addVisitLocal, removeVisitLocal } from "@/lib/sync/local-actions";
 import { useOnlineCachedSnapshot } from "@/lib/sync/use-online-cached-snapshot";
 import { buildYandexRouteUrl } from "@/lib/yandex/deeplinks";
 import {
@@ -47,7 +46,6 @@ export default function PointsListClient() {
   const [mutationError, setMutationError] = useState<string | null>(null);
   const [activeAction, setActiveAction] = useState<PointAction | null>(null);
   const [activeItem, setActiveItem] = useState<PointListItem | null>(null);
-  const [savingVisitPointIds, setSavingVisitPointIds] = useState<Set<string>>(() => new Set());
 
   const items = useMemo(
     () => createPointListItems(state.points, state.owners),
@@ -69,34 +67,6 @@ export default function PointsListClient() {
   const availableOwners = useMemo(
     () => state.owners.filter((owner) => owner.deletedAt === null),
     [state.owners]
-  );
-  const latestVisitByPointId = useMemo(
-    () =>
-      state.visits
-        .filter((visit) => visit.deletedAt === null)
-        .reduce<Map<string, Visit>>((visitsByPoint, visit) => {
-          const current = visitsByPoint.get(visit.pointId);
-          if (!current || visit.visitedAt.localeCompare(current.visitedAt) > 0) {
-            visitsByPoint.set(visit.pointId, visit);
-          }
-
-          return visitsByPoint;
-        }, new Map()),
-    [state.visits]
-  );
-  const pendingVisitPointIds = useMemo(
-    () =>
-      new Set(
-        state.pendingChanges
-          .filter(
-            (change) =>
-              change.entityName === "visit" &&
-              change.deletedAt === null &&
-              typeof change.patch.pointId === "string"
-          )
-          .map((change) => change.patch.pointId as string)
-      ),
-    [state.pendingChanges]
   );
   const dialogItem = useMemo(() => {
     if (!activeItem) {
@@ -135,27 +105,6 @@ export default function PointsListClient() {
   const openAction = (action: PointAction, item: PointListItem) => {
     setActiveItem(item);
     setActiveAction(action);
-  };
-
-  const toggleVisited = (item: PointListItem) => {
-    if (savingVisitPointIds.has(item.point.id)) {
-      return;
-    }
-
-    const latestVisit = latestVisitByPointId.get(item.point.id);
-    const mutation = latestVisit
-      ? () => removeVisitLocal(latestVisit.id)
-      : () => addVisitLocal({ pointId: item.point.id, status: "completed" });
-    const message = latestVisit ? "Отметка визита снята." : "Визит сохранен на устройстве.";
-
-    setSavingVisitPointIds((current) => new Set(current).add(item.point.id));
-    void runMutation(mutation, message).finally(() => {
-      setSavingVisitPointIds((current) => {
-        const next = new Set(current);
-        next.delete(item.point.id);
-        return next;
-      });
-    });
   };
 
   return (
@@ -255,9 +204,6 @@ export default function PointsListClient() {
             <div className="point-card-list">
               {group.items.map((item) => {
                 const routeCoordinates = getPointCoordinates(item.point);
-                const isVisitSaving = savingVisitPointIds.has(item.point.id);
-                const isVisitMarked = latestVisitByPointId.has(item.point.id);
-                const isVisitPending = pendingVisitPointIds.has(item.point.id);
 
                 return (
                   <article className="point-card" key={item.point.id}>
@@ -315,25 +261,22 @@ export default function PointsListClient() {
                       <button
                         className="card-action"
                         type="button"
-                        title={isVisitMarked ? "Снять отметку визита" : "Отметить визит"}
-                        aria-label={isVisitMarked ? "Снять отметку визита" : "Отметить визит"}
-                        disabled={isVisitSaving || (!isVisitMarked && isVisitPending)}
-                        onClick={() => toggleVisited(item)}
+                        title="Статус"
+                        aria-label="Статус"
+                        onClick={() => openAction("details", item)}
                       >
-                        <Check size={18} aria-hidden="true" />
-                        <span>
-                          {isVisitSaving ? "Сохраняю" : isVisitMarked ? "Снять визит" : "Визит"}
-                        </span>
+                        <ListChecks size={18} aria-hidden="true" />
+                        <span>Статус</span>
                       </button>
                       <button
                         className="card-action"
                         type="button"
-                        title="Действия"
-                        aria-label="Действия"
-                        onClick={() => openAction("details", item)}
+                        title="Редактировать"
+                        aria-label="Редактировать"
+                        onClick={() => openAction("edit", item)}
                       >
-                        <MoreHorizontal size={18} aria-hidden="true" />
-                        <span>Действия</span>
+                        <Pencil size={18} aria-hidden="true" />
+                        <span>Правка</span>
                       </button>
                     </div>
                   </article>

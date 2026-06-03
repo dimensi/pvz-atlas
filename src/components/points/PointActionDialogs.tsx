@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ReactNode
@@ -357,17 +358,18 @@ function EditPointForm({
 interface OwnerFormContextValue {
   body: ReactNode;
   footer: ReactNode;
+  onCancel: () => void;
 }
 
 const OwnerFormContext = createContext<OwnerFormContextValue | null>(null);
 
 function OwnerFormProvider({
   children,
-  close,
+  finishOwnerStep,
   item,
   owners,
   runMutation
-}: ActionFormProps & { children: ReactNode }) {
+}: Omit<ActionFormProps, "close"> & { children: ReactNode; finishOwnerStep: () => void }) {
   const [ownerSearch, setOwnerSearch] = useState("");
   const [ownerPhone, setOwnerPhone] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
@@ -388,7 +390,7 @@ function OwnerFormProvider({
 
   const assignOwner = async (ownerId: string | null) => {
     if (ownerId === item.point.ownerId) {
-      close();
+      finishOwnerStep();
       return;
     }
 
@@ -401,7 +403,7 @@ function OwnerFormProvider({
     setIsSaving(false);
 
     if (saved) {
-      close();
+      finishOwnerStep();
     }
   };
 
@@ -427,7 +429,7 @@ function OwnerFormProvider({
     setIsSaving(false);
 
     if (saved) {
-      close();
+      finishOwnerStep();
     }
   };
 
@@ -502,13 +504,12 @@ function OwnerFormProvider({
                 ? `Назначить ${exactSearchOwner.name}`
                 : "Создать и назначить"}
           </Button>
-          <DrawerClose asChild>
-            <Button type="button" variant="secondary">
-              Отмена
-            </Button>
-          </DrawerClose>
+          <Button type="button" variant="secondary" onClick={finishOwnerStep}>
+            Отмена
+          </Button>
         </DrawerFooter>
-      )
+      ),
+    onCancel: finishOwnerStep
   };
 
   return <OwnerFormContext.Provider value={value}>{children}</OwnerFormContext.Provider>;
@@ -621,7 +622,11 @@ export function PointActionDialogs({
   onActionChange,
   runMutation
 }: PointActionDialogsProps) {
-  const close = () => onActionChange(null);
+  const close = () => {
+    backActionRef.current = null;
+    onActionChange(null);
+  };
+  const backActionRef = useRef<PointAction | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [pendingDeleteItem, setPendingDeleteItem] = useState<PointActionItem | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -637,7 +642,26 @@ export function PointActionDialogs({
 
   const drawerOpen = Boolean(item) && isActionDrawer(action);
   const contentKey = item && action ? `${item.point.id}-${action}` : undefined;
-  const useHandleOnly = action === "edit" || action === "owner";
+
+  const openSubAction = (next: PointAction) => {
+    if (action === "details") {
+      backActionRef.current = "details";
+    }
+    onActionChange(next);
+  };
+
+  const goBack = () => {
+    const returnAction = backActionRef.current;
+    backActionRef.current = null;
+    if (returnAction) {
+      onActionChange(returnAction);
+      return;
+    }
+    close();
+  };
+
+  // Vaul: при скролле внутри sheet закрытие только через DrawerPrimitive.Handle.
+  const useHandleOnly = true;
 
   const handleDelete = async () => {
     if (!pendingDeleteItem) return;
@@ -695,7 +719,7 @@ export function PointActionDialogs({
           distanceLabel={distanceLabel}
           routeUrl={routeUrl}
           runMutation={runMutation}
-          setAction={onActionChange}
+          setAction={openSubAction}
           visibleDetailActions={resolvedDetailActions}
         />
       );
@@ -786,7 +810,7 @@ export function PointActionDialogs({
       {action === "owner" && item ? (
         <OwnerFormProvider
           key={`${item.point.id}-owner-provider`}
-          close={close}
+          finishOwnerStep={goBack}
           item={item}
           owners={owners}
           runMutation={runMutation}

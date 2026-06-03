@@ -2,7 +2,7 @@ import React from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Owner, Point } from "@/lib/data-model/types";
-import { PointActionDialogs } from "./PointActionDialogs";
+import { PointActionDialogs, type PointAction } from "./PointActionDialogs";
 
 vi.mock("@/components/ui/drawer", () => ({
   Drawer: ({
@@ -170,8 +170,7 @@ function renderMapDetailsDialog() {
       item={{ point, owner: null }}
       owners={[]}
       distanceLabel="350 м"
-      routeUrl="https://maps.example.test/route"
-      visibleDetailActions={{ route: true, assignOwner: true }}
+      visibleDetailActions={{ assignOwner: true }}
       onActionChange={onActionChange}
       runMutation={runMutation}
     />
@@ -194,13 +193,11 @@ describe("PointActionDialogs details flow", () => {
     expect(screen.getByRole("button", { name: "Редактировать" })).toBeTruthy();
   });
 
-  it("shows map details route and assign-owner actions when enabled", () => {
+  it("shows map assign-owner action when enabled", () => {
     const { onActionChange } = renderMapDetailsDialog();
 
     expect(screen.getByText("350 м")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Маршрут" }).getAttribute("href")).toBe(
-      "https://maps.example.test/route"
-    );
+    expect(screen.queryByRole("link", { name: "Маршрут" })).toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "Назначить владельца" }));
     expect(onActionChange).toHaveBeenCalledWith("owner");
@@ -275,6 +272,44 @@ describe("PointActionDialogs owner flow", () => {
       });
     });
     expect(onActionChange).toHaveBeenCalledWith(null);
+  });
+
+  it("returns to details after assigning owner from the details step", async () => {
+    localActionMocks.updatePointLocal.mockResolvedValue({ ...point, ownerId: "owner-1" });
+
+    const runMutation = vi.fn(async (mutation: () => Promise<unknown>) => {
+      await mutation();
+      return true;
+    });
+
+    function StatefulOwnerBackNavigation() {
+      const [action, setAction] = React.useState<PointAction | null>("details");
+
+      return (
+        <PointActionDialogs
+          action={action}
+          item={{ point, owner: null }}
+          owners={[owner({ id: "owner-1", name: "Анна" })]}
+          visibleDetailActions={{ assignOwner: true }}
+          onActionChange={setAction}
+          runMutation={runMutation}
+        />
+      );
+    }
+
+    render(<StatefulOwnerBackNavigation />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Назначить владельца" }));
+    expect(screen.getByRole("heading", { name: "Назначить владельца" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Анна" }));
+
+    await waitFor(() => {
+      expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
+        ownerId: "owner-1"
+      });
+      expect(screen.getByRole("heading", { name: "Действия" })).toBeTruthy();
+    });
   });
 
   it("assigns an existing owner immediately when tapped", async () => {
