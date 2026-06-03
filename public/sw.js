@@ -10,6 +10,7 @@ const APP_SHELL_URLS = [
   "/favicon.ico",
   "/apple-touch-icon.png",
   "/brand/logo.png",
+  "/map-pins/pin-avito.png",
   "/map-pins/pin-cdek.png",
   "/map-pins/pin-fivepost.png",
   "/map-pins/pin-ozon.png",

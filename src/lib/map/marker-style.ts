@@ -1,7 +1,9 @@
 import { canonicalizeBrand, type BrandId } from "@/lib/brands";
 import type { PointStatus } from "@/lib/data-model/types";
 
-export type MapMarkerBrand = BrandId;
+type LegacyMapMarkerBrand = "fivepost";
+
+export type MapMarkerBrand = BrandId | LegacyMapMarkerBrand;
 
 export interface MapMarkerStyle {
   brand: MapMarkerBrand;
@@ -23,7 +25,18 @@ export interface MapMarkerStyle {
 const PIN_BODY_PATH =
   "M20.9999 53.5C20.9999 53.5 21.4999 54.5 22.4996 54.5C23.4993 54.5 23.9999 53.5 23.9999 53.5C23.9999 53.5 24.8214 51.6204 25.4999 50.5C27.5026 47.1932 31.4997 44.5 32.4998 43.5C33.5 42.5 44.4998 35 44.4998 22.5C44.4998 10 34.6499 0.499835 22.4996 0.5C10.3495 0.500165 0.500006 9.5 0.5 22.5C0.499994 35.5 11.5 42.5 12.4998 43.5C13.4997 44.5 17.4972 47.1932 19.4999 50.5C20.1785 51.6204 20.9999 53.5 20.9999 53.5Z";
 
-const MARKER_STYLE_BY_BRAND: Record<BrandId, MapMarkerStyle> = {
+const LEGACY_MAP_BRAND_ALIASES: Record<string, LegacyMapMarkerBrand> = {
+  "5 post": "fivepost",
+  "5-post": "fivepost",
+  "5post": "fivepost",
+  fivepost: "fivepost"
+};
+
+function normalizeMapBrand(value: string): string {
+  return value.trim().toLocaleLowerCase("ru-RU").replace(/[_\s]+/g, " ");
+}
+
+const MARKER_STYLE_BY_BRAND: Record<MapMarkerBrand, MapMarkerStyle> = {
   ozon: {
     brand: "ozon",
     bodyColor: "#005bff",
@@ -68,6 +81,17 @@ const MARKER_STYLE_BY_BRAND: Record<BrandId, MapMarkerStyle> = {
     logoSrc: null,
     pinSrc: "/map-pins/pin-cdek.png"
   },
+  avito: {
+    brand: "avito",
+    bodyColor: "#00a1ff",
+    className: "map-marker-brand-avito",
+    glyph: "A",
+    glyphColor: "#ffffff",
+    logoBox: { x: 7, y: 7, width: 31, height: 31 },
+    logoBackground: "#00a1ff",
+    logoSrc: null,
+    pinSrc: "/map-pins/pin-avito.png"
+  },
   fivepost: {
     brand: "fivepost",
     bodyColor: "#565656",
@@ -100,7 +124,8 @@ const STATUS_MARKER_CLASSES: Record<PointStatus, string> = {
 };
 
 export function getMapMarkerStyle(brand: string | null | undefined): MapMarkerStyle {
-  const canonicalBrand = canonicalizeBrand(brand) ?? "other";
+  const canonicalBrand =
+    canonicalizeBrand(brand) ?? LEGACY_MAP_BRAND_ALIASES[normalizeMapBrand(brand ?? "")] ?? "other";
 
   return MARKER_STYLE_BY_BRAND[canonicalBrand];
 }

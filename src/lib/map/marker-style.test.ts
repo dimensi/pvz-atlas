@@ -24,7 +24,7 @@ describe("map marker brand styles", () => {
     );
   });
 
-  it("uses branded fallback pins for known brands without image assets", () => {
+  it("uses branded image pins for known brands", () => {
     expect(getMapMarkerStyle("WB")).toMatchObject({
       brand: "wildberries",
       glyph: "WB",
@@ -39,6 +39,18 @@ describe("map marker brand styles", () => {
       glyph: "C",
       logoSrc: null,
       pinSrc: "/map-pins/pin-cdek.png"
+    });
+    expect(getMapMarkerStyle("Avito")).toMatchObject({
+      brand: "avito",
+      glyph: "A",
+      logoSrc: null,
+      pinSrc: "/map-pins/pin-avito.png"
+    });
+    expect(getMapMarkerStyle("Авито")).toMatchObject({
+      brand: "avito",
+      glyph: "A",
+      logoSrc: null,
+      pinSrc: "/map-pins/pin-avito.png"
     });
     expect(getMapMarkerStyle("5Post")).toMatchObject({
       brand: "fivepost",
@@ -70,6 +82,9 @@ describe("map marker brand styles", () => {
     );
     expect(getMapMarkerClassName("Ozon", "active")).toBe(
       "map-marker map-marker-brand-ozon map-marker-with-image map-marker-status-active"
+    );
+    expect(getMapMarkerClassName("Avito", "new")).toBe(
+      "map-marker map-marker-brand-avito map-marker-with-image map-marker-status-new"
     );
     expect(getMapMarkerClassName("fivepost", "new")).toBe(
       "map-marker map-marker-brand-fivepost map-marker-with-image map-marker-status-new"

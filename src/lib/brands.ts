@@ -3,7 +3,7 @@ export const BRAND_OPTIONS = [
   { id: "wildberries", label: "Wildberries" },
   { id: "yandex_market", label: "Яндекс Маркет" },
   { id: "cdek", label: "СДЭК" },
-  { id: "fivepost", label: "5Post" },
+  { id: "avito", label: "Avito" },
   { id: "other", label: "Другое" }
 ] as const;
 
@@ -12,10 +12,8 @@ export type BrandId = (typeof BRAND_OPTIONS)[number]["id"];
 const BRAND_BY_ID = new Map(BRAND_OPTIONS.map((brand) => [brand.id, brand]));
 
 const BRAND_ALIASES: Record<string, BrandId> = {
-  "5 post": "fivepost",
-  "5-post": "fivepost",
-  "5post": "fivepost",
-  fivepost: "fivepost",
+  avito: "avito",
+  "авито": "avito",
   cdek: "cdek",
   "сдек": "cdek",
   "сдэк": "cdek",

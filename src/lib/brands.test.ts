@@ -13,20 +13,24 @@ describe("brand helpers", () => {
     expect(canonicalizeBrand("WB")).toBe("wildberries");
     expect(canonicalizeBrand("Яндекс Маркет")).toBe("yandex_market");
     expect(canonicalizeBrand("СДЭК")).toBe("cdek");
-    expect(canonicalizeBrand("5Post")).toBe("fivepost");
-    expect(canonicalizeBrand("fivepost")).toBe("fivepost");
+    expect(canonicalizeBrand("Avito")).toBe("avito");
+    expect(canonicalizeBrand("avito")).toBe("avito");
+    expect(canonicalizeBrand("Авито")).toBe("avito");
   });
 
   it("keeps unknown legacy brands displayable", () => {
     expect(canonicalizeBrand("Boxberry")).toBeNull();
     expect(getBrandLabel("Boxberry")).toBe("Boxberry");
+    expect(canonicalizeBrand("5Post")).toBeNull();
+    expect(canonicalizeBrand("fivepost")).toBeNull();
+    expect(getBrandLabel("5Post")).toBe("5Post");
   });
 
   it("returns controlled brand pill classes for known and unknown brands", () => {
     expect(getBrandPillClassName("Ozon")).toBe("brand-pill brand-pill-ozon");
     expect(getBrandPillClassName("WB")).toBe("brand-pill brand-pill-wildberries");
     expect(getBrandPillClassName("Яндекс Маркет")).toBe("brand-pill brand-pill-yandex_market");
-    expect(getBrandPillClassName("fivepost")).toBe("brand-pill brand-pill-fivepost");
+    expect(getBrandPillClassName("Avito")).toBe("brand-pill brand-pill-avito");
     expect(getBrandPillClassName("Boxberry")).toBe("brand-pill brand-pill-other");
   });
 

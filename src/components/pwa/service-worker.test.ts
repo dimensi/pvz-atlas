@@ -10,6 +10,7 @@ describe("service worker policy", () => {
   });
 
   it("precaches local map pin images for offline field use", () => {
+    expect(serviceWorkerSource).toContain('"/map-pins/pin-avito.png"');
     expect(serviceWorkerSource).toContain('"/map-pins/pin-cdek.png"');
     expect(serviceWorkerSource).toContain('"/map-pins/pin-fivepost.png"');
     expect(serviceWorkerSource).toContain('"/map-pins/pin-ozon.png"');
