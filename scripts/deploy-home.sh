@@ -7,7 +7,6 @@ SSH_HOST="${SSH_HOST:-vidstore}"
 REMOTE_DIR="${REMOTE_DIR:-/opt/pvz-atlas}"
 CADDY_DIR="${CADDY_DIR:-/opt/apple_vidnoe}"
 CADDYFILE="${CADDYFILE:-${CADDY_DIR}/Caddyfile}"
-BASIC_AUTH_FILE="${BASIC_AUTH_FILE:-${REMOTE_DIR}/.caddy-basic-auth}"
 COMPOSE_FILE="docker-compose.yml"
 APP_IMAGE="${APP_IMAGE:-pvz-atlas-pvz-atlas:latest}"
 CADDY_CONTAINER="${CADDY_CONTAINER:-caddy}"
@@ -29,7 +28,6 @@ rsync -az --delete \
   --exclude .DS_Store \
   --exclude '.env' \
   --exclude '.env.*' \
-  --exclude '.caddy-basic-auth' \
   "${ROOT_DIR}/" "${SSH_HOST}:${REMOTE_DIR}/"
 
 ssh "${SSH_HOST}" "cat > '${REMOTE_DIR}/${COMPOSE_FILE}' <<'YAML'
@@ -54,36 +52,6 @@ networks:
   ${PROXY_NETWORK}:
     external: true
 YAML"
-
-ssh "${SSH_HOST}" "cd '${REMOTE_DIR}' && python3 - <<'PY' > .caddy-basic-auth.env
-from pathlib import Path
-from shlex import quote
-
-values = {}
-for line in Path('.env').read_text().splitlines():
-    if not line or line.lstrip().startswith('#') or '=' not in line:
-        continue
-    key, value = line.split('=', 1)
-    key = key.strip()
-    if key not in {'PVZ_BASIC_AUTH_USER', 'PVZ_BASIC_AUTH_PASSWORD'}:
-        continue
-    value = value.strip()
-    if len(value) >= 2 and value[0] == value[-1] and value[0] in {'\"', \"'\"}:
-        value = value[1:-1]
-    values[key] = value
-
-missing = [key for key in ('PVZ_BASIC_AUTH_USER', 'PVZ_BASIC_AUTH_PASSWORD') if not values.get(key)]
-if missing:
-    raise SystemExit('Missing required .env values: ' + ', '.join(missing))
-
-print('PVZ_BASIC_AUTH_USER=' + quote(values['PVZ_BASIC_AUTH_USER']))
-print('PVZ_BASIC_AUTH_PASSWORD=' + quote(values['PVZ_BASIC_AUTH_PASSWORD']))
-PY
-. ./.caddy-basic-auth.env
-rm ./.caddy-basic-auth.env
-auth_hash=\$(docker exec '${CADDY_CONTAINER}' caddy hash-password --algorithm bcrypt --plaintext \"\${PVZ_BASIC_AUTH_PASSWORD}\")
-umask 077
-printf '%s %s\n' \"\${PVZ_BASIC_AUTH_USER}\" \"\${auth_hash}\" > '${BASIC_AUTH_FILE}'"
 
 case "${DEPLOY_IMAGE_SOURCE}" in
   build)
@@ -114,16 +82,8 @@ from datetime import UTC, datetime
 
 caddyfile = Path('${CADDYFILE}')
 domain = '${DOMAIN}'
-auth_file = Path('${BASIC_AUTH_FILE}')
-auth = auth_file.read_text().strip().split(maxsplit=1)
-if len(auth) != 2:
-    raise SystemExit(f'{auth_file} must contain: <username> <caddy-hashed-password>')
-auth_user, auth_hash = auth
 block = f'''
 {domain} {{
-\tbasic_auth {{
-\t\t{auth_user} {auth_hash}
-\t}}
 \treverse_proxy ${APP_NAME}:3000
 }}
 '''.lstrip()

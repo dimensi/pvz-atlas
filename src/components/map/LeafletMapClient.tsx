@@ -124,24 +124,6 @@ export default function LeafletMapClient() {
     return filteredMarkers.find((item) => item.point.id === activeItem.point.id) ?? null;
   }, [activeItem, filteredMarkers]);
 
-  useEffect(() => {
-    if (!activeItem) {
-      return;
-    }
-
-    const freshItem = allItems.find((entry) => entry.point.id === activeItem.point.id);
-    if (!freshItem) {
-      return;
-    }
-
-    if (
-      freshItem.point.updatedAt !== activeItem.point.updatedAt ||
-      freshItem.point.ownerId !== activeItem.point.ownerId ||
-      freshItem.owner?.id !== activeItem.owner?.id
-    ) {
-      setActiveItem(freshItem);
-    }
-  }, [activeItem, allItems]);
   const hasLocalRows = state.points.length > 0 || state.owners.length > 0 || state.visits.length > 0;
   const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
   const error = mutationError ?? cacheError;

@@ -1,5 +1,33 @@
 # ExecPlans
 
+## App Login Auth
+
+Status: completed
+
+Intent:
+- Replace Caddy Basic Auth with an application login page.
+- Reuse `PVZ_BASIC_AUTH_USER` and `PVZ_BASIC_AUTH_PASSWORD` as the app credentials.
+- Protect private pages and API routes with a signed HttpOnly session cookie.
+- Keep PWA static assets available while removing Caddy Basic Auth from deployment.
+
+Implementation:
+- Add auth helpers for credential validation, JWT signing/verification, and cookie options.
+- Add login/logout API routes and a typed auth API client.
+- Add Next.js `proxy.ts` request protection for private pages and API routes.
+- Add a mobile-first `/login` page and a logout action in the app shell.
+- Update deployment script and `.env.example` comments to stop configuring Caddy Basic Auth.
+
+Verification:
+- `pnpm test` passed.
+- `pnpm run typecheck` passed.
+- `pnpm run lint` passed.
+- `pnpm run build` passed.
+- Browser check passed: `/map` redirects to `/login?next=%2Fmap`, valid login returns to `/map`, and logout is visible.
+
+Review:
+- Dedicated review sub-agent was not used because the available multi-agent tool requires explicit user delegation.
+- Local diff review caught and fixed the login API proxy exemption before completion.
+
 ## Locate Operator On Map
 
 Status: completed

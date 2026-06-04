@@ -1,7 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import Image from "next/image";
-import Link from "next/link";
-import { ListTodo, Map, Plus, Users } from "lucide-react";
+import { AppShell } from "@/components/mobile/AppShell";
 import { ServiceWorkerRegister } from "@/components/pwa/ServiceWorkerRegister";
 import { Toaster } from "@/components/ui/sonner";
 import "leaflet/dist/leaflet.css";
@@ -33,13 +31,6 @@ export const viewport: Viewport = {
   themeColor: "#f8fafc"
 };
 
-const tabs = [
-  { href: "/map", label: "Карта", icon: Map },
-  { href: "/points", label: "Список", icon: ListTodo },
-  { href: "/add", label: "Добавить", icon: Plus },
-  { href: "/owners", label: "Владельцы", icon: Users }
-];
-
 export default function RootLayout({
   children
 }: Readonly<{
@@ -48,40 +39,9 @@ export default function RootLayout({
   return (
     <html lang="ru">
       <body>
-        <div className="app-shell">
-          <header className="top-bar">
-            <div className="brand-lockup">
-              <Image
-                alt=""
-                aria-hidden="true"
-                className="brand-logo"
-                height="44"
-                src="/brand/logo.png"
-                width="44"
-              />
-              <div className="brand-copy">
-                <p className="eyebrow">ПВЗ Органайзер</p>
-                <h1>Полевой обход</h1>
-              </div>
-            </div>
-            <div className="status-pill" aria-label="Статус приложения">
-              На устройстве
-            </div>
-          </header>
-          <main className="main-content">{children}</main>
-          <nav className="bottom-nav" aria-label="Основная навигация">
-            {tabs.map((tab) => (
-              <Link className="nav-tab" href={tab.href} key={tab.href}>
-                <span aria-hidden="true">
-                  <tab.icon size={18} strokeWidth={2.4} />
-                </span>
-                {tab.label}
-              </Link>
-            ))}
-          </nav>
-          <Toaster />
-          <ServiceWorkerRegister />
-        </div>
+        <AppShell>{children}</AppShell>
+        <Toaster />
+        <ServiceWorkerRegister />
       </body>
     </html>
   );
