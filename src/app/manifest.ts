@@ -6,7 +6,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "ПВЗ Органайзер",
     short_name: "ПВЗ",
     description: "Мобильное приложение для полевого учета пунктов выдачи",
-    start_url: "/map",
+    start_url: "/points",
     scope: "/",
     display: "standalone",
     background_color: "#f8fafc",

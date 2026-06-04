@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { logout } from "@/lib/api/auth-api";
 
 const tabs = [
-  { href: "/map", label: "Карта", icon: Map },
   { href: "/points", label: "Список", icon: ListTodo },
+  { href: "/map", label: "Карта", icon: Map },
   { href: "/add", label: "Добавить", icon: Plus },
   { href: "/owners", label: "Владельцы", icon: Users }
 ];
