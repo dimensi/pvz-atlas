@@ -372,6 +372,7 @@ function OwnerFormProvider({
 }: Omit<ActionFormProps, "close"> & { children: ReactNode; finishOwnerStep: () => void }) {
   const [ownerSearch, setOwnerSearch] = useState("");
   const [ownerPhone, setOwnerPhone] = useState("");
+  const [ownerTelegram, setOwnerTelegram] = useState("");
   const [validationError, setValidationError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const sortedOwners = useMemo(() => sortOwners(owners), [owners]);
@@ -423,7 +424,11 @@ function OwnerFormProvider({
     setValidationError(null);
     setIsSaving(true);
     const saved = await runMutation(async () => {
-      const owner = await createOwnerLocal({ name, phone: ownerPhone.trim() || null });
+      const owner = await createOwnerLocal({
+        name,
+        phone: ownerPhone.trim() || null,
+        telegram: ownerTelegram.trim() || null
+      });
       await updatePointLocal(item.point.id, { ownerId: owner.id });
     }, "Сохранено на устройстве.");
     setIsSaving(false);
@@ -468,6 +473,17 @@ function OwnerFormProvider({
                 id="owner-phone-new"
                 value={ownerPhone}
                 onValueChange={setOwnerPhone}
+              />
+            </Field>
+          ) : null}
+
+          {!exactSearchOwner && ownerSearch.trim().length > 0 ? (
+            <Field id="owner-telegram-new" label="Telegram (опционально)">
+              <Input
+                id="owner-telegram-new"
+                placeholder="@username"
+                value={ownerTelegram}
+                onChange={(event) => setOwnerTelegram(event.target.value)}
               />
             </Field>
           ) : null}

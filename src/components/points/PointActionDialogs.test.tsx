@@ -265,13 +265,43 @@ describe("PointActionDialogs owner flow", () => {
     await waitFor(() => {
       expect(localActionMocks.createOwnerLocal).toHaveBeenCalledWith({
         name: "Иван",
-        phone: null
+        phone: null,
+        telegram: null
       });
       expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
         ownerId: "owner-new"
       });
     });
     expect(onActionChange).toHaveBeenCalledWith(null);
+  });
+
+  it("creates a new owner with phone and telegram from the quick form", async () => {
+    localActionMocks.createOwnerLocal.mockResolvedValue(owner({ id: "owner-new", name: "Иван" }));
+    localActionMocks.updatePointLocal.mockResolvedValue({ ...point, ownerId: "owner-new" });
+
+    renderOwnerDialog();
+
+    fireEvent.change(screen.getByLabelText("Поиск владельца"), {
+      target: { value: "Иван" }
+    });
+    fireEvent.input(screen.getByLabelText("Телефон (опционально)"), {
+      target: { value: "89991112233" }
+    });
+    fireEvent.change(screen.getByLabelText("Telegram (опционально)"), {
+      target: { value: "@owner_tg" }
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Создать и назначить" }));
+
+    await waitFor(() => {
+      expect(localActionMocks.createOwnerLocal).toHaveBeenCalledWith({
+        name: "Иван",
+        phone: "+7 (999) 111-22-33",
+        telegram: "@owner_tg"
+      });
+      expect(localActionMocks.updatePointLocal).toHaveBeenCalledWith("point-1", {
+        ownerId: "owner-new"
+      });
+    });
   });
 
   it("returns to details after assigning owner from the details step", async () => {
