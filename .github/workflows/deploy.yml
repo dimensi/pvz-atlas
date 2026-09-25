@@ -1,0 +1,46 @@
+name: Deploy PVZ Atlas
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-pvz-atlas
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Configure SSH
+        env:
+          VDS_SSH_PRIVATE_KEY: ${{ secrets.VDS_SSH_PRIVATE_KEY }}
+          VDS_KNOWN_HOSTS: ${{ secrets.VDS_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VDS_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VDS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+
+      - name: Restore environment on VPS
+        env:
+          PVZ_ENV_B64: ${{ secrets.PVZ_ENV_B64 }}
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+        run: |
+          printf '%s' "$PVZ_ENV_B64" \
+            | base64 --decode \
+            | ssh "root@$VDS_HOST" \
+                'install -d -m 755 /opt/pvz-atlas && umask 077 && cat > /opt/pvz-atlas/.env'
+
+      - name: Deploy application
+        env:
+          SSH_HOST: root@${{ secrets.VDS_HOST }}
+        run: bash scripts/deploy-home.sh
