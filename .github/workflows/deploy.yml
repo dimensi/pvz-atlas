@@ -15,10 +15,22 @@ jobs:
     runs-on: ubuntu-26.04
     permissions:
       contents: read
+      packages: write
+
+    env:
+      IMAGE_NAME: ghcr.io/${{ github.repository }}:latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+
+      - name: Log in to GitHub Container Registry
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+
+      - name: Build and push image
+        run: |
+          docker build -t "$IMAGE_NAME" .
+          docker push "$IMAGE_NAME"
 
       - name: Configure SSH
         env:
@@ -40,7 +52,18 @@ jobs:
             | ssh "root@$VDS_HOST" \
                 'install -d -m 755 /opt/pvz-atlas && umask 077 && cat > /opt/pvz-atlas/.env'
 
+      - name: Pull image on VPS
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" \
+            | ssh "root@$VDS_HOST" docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          ssh "root@$VDS_HOST" docker pull "$IMAGE_NAME"
+
       - name: Deploy application
         env:
+          APP_IMAGE: ${{ env.IMAGE_NAME }}
+          DEPLOY_IMAGE_SOURCE: none
           SSH_HOST: root@${{ secrets.VDS_HOST }}
         run: bash scripts/deploy-home.sh
