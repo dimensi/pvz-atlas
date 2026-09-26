@@ -107,6 +107,9 @@ select {
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px 10px;
+  padding-top: calc(14px + env(safe-area-inset-top));
+  padding-right: calc(16px + env(safe-area-inset-right));
+  padding-left: calc(16px + env(safe-area-inset-left));
   background: color-mix(in srgb, var(--background) 94%, white);
   border-bottom: 1px solid var(--line);
 }
@@ -223,6 +226,9 @@ select {
 .main-content {
   flex: 1;
   padding: 18px 16px 92px;
+  padding-right: calc(16px + env(safe-area-inset-right));
+  padding-bottom: calc(92px + env(safe-area-inset-bottom));
+  padding-left: calc(16px + env(safe-area-inset-left));
 }
 
 .auth-shell {
@@ -236,7 +242,11 @@ select {
   min-height: 100dvh;
   display: grid;
   align-items: center;
-  padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  padding: 24px 16px;
+  padding-top: calc(24px + env(safe-area-inset-top));
+  padding-right: calc(16px + env(safe-area-inset-right));
+  padding-bottom: calc(24px + env(safe-area-inset-bottom));
+  padding-left: calc(16px + env(safe-area-inset-left));
 }
 
 .auth-card {
@@ -312,7 +322,10 @@ select {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   max-width: 720px;
   margin: 0 auto;
-  padding: 8px 10px max(8px, env(safe-area-inset-bottom));
+  padding: 8px 10px;
+  padding-right: calc(10px + env(safe-area-inset-right));
+  padding-bottom: calc(8px + env(safe-area-inset-bottom));
+  padding-left: calc(10px + env(safe-area-inset-left));
   background: color-mix(in srgb, white 96%, var(--surface-muted));
   border-top: 1px solid var(--line);
 }
@@ -1598,7 +1611,9 @@ select {
   .top-bar {
     gap: 10px;
     padding-right: 12px;
+    padding-right: calc(12px + env(safe-area-inset-right));
     padding-left: 12px;
+    padding-left: calc(12px + env(safe-area-inset-left));
   }
 
   .brand-lockup {

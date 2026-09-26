@@ -1,5 +1,27 @@
 # ExecPlans
 
+## Map Touch Gestures and iPhone Safe Areas
+
+Status: verified in mobile WebKit; installed iPhone check pending
+
+Intent:
+- Keep one-finger map panning usable after an interrupted touch gesture. The operator scrolls the page outside the map.
+- Keep the fixed bottom navigation above the iPhone home indicator and preserve tappable content above it.
+
+Plan:
+- Inspect Leaflet touch dragging/zoom behavior and the current mobile viewport CSS. Recover a stale Leaflet drag after a lost touch completion, cancellation, or app backgrounding without changing normal one-finger map panning.
+- Enable edge-to-edge viewport only with matching top, bottom, and side safe-area padding.
+- Verify map movement and page scrolling on a mobile browser interaction, plus 320–390 px layout/screenshots. Run lint, typecheck, tests, and build.
+- Review the diff, publish through the existing squash/deploy workflow if the behavior is verified, and check the public release.
+
+Verification:
+- Mobile WebKit at 390 px reports Leaflet touch dragging enabled and `touch-action: none`. A synthetic one-finger gesture moved the map pane 50 px. After deliberately omitting `touchend`, the next one-finger gesture cleared the drag class and moved the pane again (30 px to 80 px).
+- At 320 px, the document can scroll to its end and the bottom navigation remains fixed without covering the final map summary. Screenshots are in `docs/screenshots/map-touch/`.
+- Lint, typecheck, 197 tests, and production build pass. Unit tests cover normal completion, lost completion, cancellation/backgrounding, a remaining finger after cancellation, and a stale drag class.
+- The review found that a partial `touchcancel` could reset a two-finger gesture; recovery now waits until no contacts remain, with a focused regression test.
+- The installed iOS PWA could not be authenticated in Simulator because its input/clipboard bridge failed. Physical-device verification remains needed for the intermittent original report and actual home-indicator inset.
+
+
 ## iOS Home Screen Offline Launch Recovery
 
 Status: ready for release; installed iOS cold launch remains unverified in Simulator

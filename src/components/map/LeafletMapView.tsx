@@ -12,6 +12,7 @@ import { CircleMarker, MapContainer, Marker, TileLayer, useMap, useMapEvents } f
 import { getBrandLabel } from "@/lib/brands";
 import { getMapMarkerClassName, getMapMarkerHtml } from "@/lib/map/marker-style";
 import type { GeoPoint, MappablePointItem, MapMarkerCluster } from "@/lib/map/points";
+import { attachMapTouchRecovery } from "@/lib/map/touch-recovery";
 import { POINT_STATUS_LABELS } from "@/lib/points/list";
 
 interface LeafletMapViewProps {
@@ -170,6 +171,14 @@ function MapViewportController({
   return null;
 }
 
+function MapTouchRecovery() {
+  const map = useMap();
+
+  useEffect(() => attachMapTouchRecovery(map.getContainer(), map.dragging), [map]);
+
+  return null;
+}
+
 export default function LeafletMapView({
   autoFitKey,
   markerClusters,
@@ -202,6 +211,7 @@ export default function LeafletMapView({
         eventHandlers={{ tileerror: onTileError }}
         url={OSM_TILE_URL}
       />
+      <MapTouchRecovery />
       <MapViewportController
         autoFitKey={autoFitKey}
         clusters={markerClusters}
