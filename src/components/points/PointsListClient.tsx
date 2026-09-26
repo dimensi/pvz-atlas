@@ -24,7 +24,6 @@ import {
   type PointListItem
 } from "@/lib/points/list";
 import { PointActionDialogs, type PointAction } from "./PointActionDialogs";
-import { SyncHealthIndicator } from "@/components/sync/SyncHealthIndicator";
 
 function isKnownStatus(value: string): value is PointStatus {
   return isEditablePointStatus(value);
@@ -119,13 +118,6 @@ export default function PointsListClient() {
           <h2 className="page-title">Пункты выдачи</h2>
           <p className="lead">Без владельца сверху, затем группы по владельцам.</p>
         </div>
-        <SyncHealthIndicator
-          pendingChanges={state.pendingChanges}
-          conflicts={state.conflicts}
-          isOnline={isOnline}
-          isRefreshing={isRefreshing}
-          error={error}
-        />
       </section>
 
       <section className="list-controls" aria-label="Поиск и фильтры">

@@ -1,6 +1,7 @@
 import { z, ZodError } from "zod";
 import { GoogleSheetsConfigError } from "@/lib/sheets/google-client";
 import { getSheetsSnapshot } from "@/lib/sheets/cache";
+import { getConfiguredSheetSourceId } from "@/lib/sheets/source-id";
 import { pullResponseSchema } from "@/lib/sync/contracts";
 import { jsonError } from "@/lib/validation/api";
 
@@ -10,27 +11,20 @@ const pullQuerySchema = z.object({
   since: z.string().datetime().optional()
 });
 
-const changedSince = <T extends { updatedAt: string }>(items: T[], since?: string): T[] => {
-  if (!since) {
-    return items;
-  }
-
-  const sinceMs = Date.parse(since);
-  return items.filter((item) => Date.parse(item.updatedAt) > sinceMs);
-};
-
 export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
-    const query = pullQuerySchema.parse({
+    pullQuerySchema.parse({
       since: url.searchParams.get("since") ?? undefined
     });
+    const sourceId = getConfiguredSheetSourceId();
     const snapshot = await getSheetsSnapshot();
     const response = pullResponseSchema.parse({
-      points: changedSince(snapshot.points, query.since),
-      owners: changedSince(snapshot.owners, query.since),
-      visits: changedSince(snapshot.visits, query.since),
-      conflicts: changedSince(snapshot.conflicts, query.since),
+      sourceId,
+      points: snapshot.points,
+      owners: snapshot.owners,
+      visits: snapshot.visits,
+      conflicts: snapshot.conflicts,
       serverTime: new Date().toISOString(),
       warnings: snapshot.diagnostics.map(
         (diagnostic) =>

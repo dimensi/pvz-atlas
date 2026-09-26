@@ -4,6 +4,7 @@ import type { Point } from "@/lib/data-model/types";
 import type { MetaEntry, PvzDatabase } from "@/lib/indexeddb/db";
 import type { PullResponse } from "@/lib/api/types";
 import { useOnlineCachedSnapshot } from "./use-online-cached-snapshot";
+import { SYNC_SOURCE_META_KEY } from "./meta";
 
 const now = "2026-01-02T03:04:05.000Z";
 
@@ -20,6 +21,18 @@ class FakeTable<TItem extends object> {
     for (const item of items) {
       await this.put(item);
     }
+  }
+
+  async toArray(): Promise<TItem[]> {
+    return [...this.items];
+  }
+
+  async bulkDelete(keys: string[]): Promise<void> {
+    this.items = this.items.filter((item) => !keys.includes(String(item[this.key])));
+  }
+
+  async delete(key: string): Promise<void> {
+    await this.bulkDelete([key]);
   }
 
   async put(item: TItem): Promise<void> {
@@ -104,7 +117,8 @@ function deferred<T>() {
 
 function pullResponse(points: Point[]): PullResponse {
   return {
-    serverTime: "2026-01-03T00:00:00.000Z",
+    sourceId: "source-A",
+      serverTime: "2026-01-03T00:00:00.000Z",
     points,
     owners: [],
     visits: [],
@@ -116,6 +130,7 @@ describe("useOnlineCachedSnapshot", () => {
   it("shows cached rows first and then online refreshed rows", async () => {
     setOnline(true);
     const database = createDatabase([point({ address: "Cached 1" })]);
+    await database.meta.put({ key: SYNC_SOURCE_META_KEY, value: "source-A", updatedAt: now });
     const pull = deferred<PullResponse>();
     const api = {
       pullSync: () => pull.promise,
@@ -161,7 +176,7 @@ describe("useOnlineCachedSnapshot", () => {
 
     await waitFor(() => {
       expect(result.current.status).toBe("error");
-      expect(result.current.error).toBe("network down");
+      expect(result.current.error).toBe("Не удалось обновить данные. Данные на устройстве сохранены.");
       expect(result.current.snapshot.points[0]?.address).toBe("Cached 1");
     });
   });

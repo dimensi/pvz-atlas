@@ -18,6 +18,7 @@ import {
   type SheetRowDiagnostic
 } from "./schema";
 import { createGoogleSheetsValuesClient, type GoogleSheetsValuesClient } from "./google-client";
+import { changedCellUpdates, columnLetter } from "./write-diff";
 
 type SheetKey = keyof typeof SHEET_COLUMNS;
 type RowObject = Record<string, string>;
@@ -74,19 +75,6 @@ const serializeByKey = {
   changesLog: serializeChangeRow,
   conflicts: serializeConflictRow
 };
-
-function columnLetter(index: number): string {
-  let dividend = index;
-  let column = "";
-
-  while (dividend > 0) {
-    const modulo = (dividend - 1) % 26;
-    column = String.fromCharCode(65 + modulo) + column;
-    dividend = Math.floor((dividend - modulo) / 26);
-  }
-
-  return column;
-}
 
 function rowToObject(headers: string[], row: string[], columns: readonly string[]): RowObject {
   return Object.fromEntries(
@@ -152,7 +140,8 @@ async function upsertRecords<TKey extends "points" | "owners" | "visits" | "conf
   client: GoogleSheetsValuesClient,
   key: TKey,
   records: SheetsWriteSet[TKey],
-  rowNumbersById: Map<string, number>
+  rowNumbersById: Map<string, number>,
+  originalRecords: SheetsWriteSet[TKey]
 ): Promise<void> {
   if (!records || records.length === 0) {
     return;
@@ -163,16 +152,16 @@ async function upsertRecords<TKey extends "points" | "owners" | "visits" | "conf
   const lastColumn = columnLetter(columns.length);
   const updates: Array<{ range: string; values: string[][] }> = [];
   const appends: string[][] = [];
+  const originalById = new Map((originalRecords ?? []).map((record) => [record.id, record]));
 
   for (const record of records) {
     const values = serializeValues(key, record as never);
     const rowNumber = rowNumbersById.get(record.id);
 
     if (rowNumber) {
-      updates.push({
-        range: `${sheetName}!A${rowNumber}:${lastColumn}${rowNumber}`,
-        values: [values]
-      });
+      const original = originalById.get(record.id);
+      const previousValues = original ? serializeValues(key, original as never) : [];
+      updates.push(...changedCellUpdates(sheetName, rowNumber, previousValues, values));
     } else {
       appends.push(values);
     }
@@ -193,10 +182,9 @@ async function appendRecords<TKey extends "changesLog">(
 
   const columns = SHEET_COLUMNS[key];
   const sheetName = sheetNameByKey[key];
-  const lastColumn = columnLetter(columns.length);
   const values = records.map((record) => serializeValues(key, record));
 
-  await client.append(`${sheetName}!A:${lastColumn}`, values);
+  await client.append(`${sheetName}!A:${columnLetter(columns.length)}`, values);
 }
 
 export async function readSheetsSnapshot(
@@ -246,9 +234,33 @@ export async function writeSheetsChanges(
 ): Promise<void> {
   const sheetsClient = client ?? (await createGoogleSheetsValuesClient());
 
-  await upsertRecords(sheetsClient, "points", writeSet.points, snapshot.rowNumbers.points);
-  await upsertRecords(sheetsClient, "owners", writeSet.owners, snapshot.rowNumbers.owners);
-  await upsertRecords(sheetsClient, "visits", writeSet.visits, snapshot.rowNumbers.visits);
-  await upsertRecords(sheetsClient, "conflicts", writeSet.conflicts, snapshot.rowNumbers.conflicts);
+  await upsertRecords(
+    sheetsClient,
+    "points",
+    writeSet.points,
+    snapshot.rowNumbers.points,
+    snapshot.points
+  );
+  await upsertRecords(
+    sheetsClient,
+    "owners",
+    writeSet.owners,
+    snapshot.rowNumbers.owners,
+    snapshot.owners
+  );
+  await upsertRecords(
+    sheetsClient,
+    "visits",
+    writeSet.visits,
+    snapshot.rowNumbers.visits,
+    snapshot.visits
+  );
+  await upsertRecords(
+    sheetsClient,
+    "conflicts",
+    writeSet.conflicts,
+    snapshot.rowNumbers.conflicts,
+    snapshot.conflicts
+  );
   await appendRecords(sheetsClient, "changesLog", writeSet.changesLog);
 }

@@ -44,7 +44,9 @@ const snapshot = (overrides: Partial<RemoteSnapshot> = {}): RemoteSnapshot => ({
   ...overrides
 });
 
-const change = (overrides: Partial<Change> = {}): Change => ({
+type ChangeWithBaseValues = Change & { baseValues?: Record<string, unknown> };
+
+const change = (overrides: Partial<ChangeWithBaseValues> = {}): ChangeWithBaseValues => ({
   id: "change-1",
   entityName: "point",
   entityId: "point-1",
@@ -52,6 +54,7 @@ const change = (overrides: Partial<Change> = {}): Change => ({
   baseVersion: 3,
   clientId: "client-1",
   patch: { ownerId: "owner-1" },
+  baseValues: { ownerId: null },
   syncedAt: null,
   createdAt: now,
   updatedAt: now,
@@ -95,7 +98,9 @@ describe("server sync application", () => {
         localValue: "owner-1",
         remoteValue: "owner-2",
         baseVersion: 3,
-        remoteVersion: 4
+        remoteVersion: 4,
+        resolvedAt: later,
+        resolution: "remote"
       })
     ]);
     expect(result.snapshot.points[0].ownerId).toBe("owner-2");
@@ -126,6 +131,129 @@ describe("server sync application", () => {
     expect(result.snapshot.points[0].version).toBe(4);
   });
 
+  it("merges a local field when the remote changed another field", () => {
+    const remote = { ...point, comment: "edited in Sheets", version: 4 };
+    const result = applyChangesToSnapshot(snapshot({ points: [remote] }), [change()], options);
+
+    expect(result.acceptedChangeIds).toEqual(["change-1"]);
+    expect(result.rejected).toEqual([]);
+    expect(result.snapshot.points[0]).toMatchObject({
+      ownerId: "owner-1",
+      comment: "edited in Sheets",
+      version: 5
+    });
+  });
+
+  it("applies safe fields while resolving a same-field collision in favor of Sheets", () => {
+    const remote = { ...point, ownerId: "owner-2", version: 4 };
+    const result = applyChangesToSnapshot(
+      snapshot({ points: [remote] }),
+      [
+        change({
+          patch: { ownerId: "owner-1", comment: "local note" },
+          baseValues: { ownerId: null, comment: null }
+        })
+      ],
+      options
+    );
+
+    expect(result.acceptedChangeIds).toEqual([]);
+    expect(result.rejected).toEqual([{ changeId: "change-1", reason: "conflict" }]);
+    expect(result.snapshot.points[0]).toMatchObject({
+      ownerId: "owner-2",
+      comment: "local note",
+      version: 5
+    });
+    expect(result.appliedChanges[0].patch).toEqual({ comment: "local note" });
+    expect(result.conflicts).toEqual([
+      expect.objectContaining({
+        field: "ownerId",
+        localValue: "owner-1",
+        remoteValue: "owner-2",
+        resolvedAt: later,
+        resolution: "remote"
+      })
+    ]);
+  });
+
+  it("rejects legacy updates without base values and returns a resolved notice", () => {
+    const result = applyChangesToSnapshot(
+      snapshot(),
+      [change({ baseValues: undefined })],
+      options
+    );
+
+    expect(result.acceptedChangeIds).toEqual([]);
+    expect(result.rejected).toEqual([
+      { changeId: "change-1", reason: "legacy_base_unknown" }
+    ]);
+    expect(result.snapshot.points[0].ownerId).toBeNull();
+    expect(result.conflicts).toEqual([
+      expect.objectContaining({
+        field: "ownerId",
+        localValue: "owner-1",
+        remoteValue: null,
+        resolution: "remote",
+        resolvedAt: later
+      })
+    ]);
+  });
+
+  it("applies a later independent field patch after an earlier collision", () => {
+    const remote = { ...point, ownerId: "owner-2", version: 4 };
+    const result = applyChangesToSnapshot(
+      snapshot({ points: [remote] }),
+      [
+        change({ id: "change-1", patch: { ownerId: "owner-1" } }),
+        change({
+          id: "change-2",
+          baseVersion: 3,
+          patch: { comment: "later local note" },
+          baseValues: { comment: null }
+        })
+      ],
+      options
+    );
+
+    expect(result.acceptedChangeIds).toEqual(["change-2"]);
+    expect(result.rejected).toEqual([{ changeId: "change-1", reason: "conflict" }]);
+    expect(result.conflicts.map((conflict) => conflict.field)).toEqual(["ownerId"]);
+    expect(result.conflicts.every((conflict) => conflict.resolution === "remote")).toBe(true);
+    expect(result.snapshot.points[0]).toMatchObject({
+      ownerId: "owner-2",
+      comment: "later local note",
+      version: 5
+    });
+  });
+
+  it("keeps a later same-field collision as a remote-wins notice", () => {
+    const remote = { ...point, ownerId: "owner-2", version: 4 };
+    const result = applyChangesToSnapshot(
+      snapshot({ points: [remote] }),
+      [
+        change({ id: "change-1", patch: { ownerId: "owner-1" } }),
+        change({
+          id: "change-2",
+          patch: { ownerId: "owner-3" },
+          baseValues: { ownerId: "owner-1" }
+        })
+      ],
+      options
+    );
+
+    expect(result.acceptedChangeIds).toEqual([]);
+    expect(result.rejected).toEqual([
+      { changeId: "change-1", reason: "conflict" },
+      { changeId: "change-2", reason: "conflict" }
+    ]);
+    expect(result.conflicts).toEqual([
+      expect.objectContaining({ field: "ownerId", localValue: "owner-1", remoteValue: "owner-2" }),
+      expect.objectContaining({ field: "ownerId", localValue: "owner-3", remoteValue: "owner-2" })
+    ]);
+    expect(result.conflicts.every((conflict) => conflict.resolution === "remote")).toBe(true);
+    expect(result.snapshot.points[0]).toMatchObject({ ownerId: "owner-2", version: 4 });
+  });
+
   it("creates a new entity from a create change", () => {
     const newPoint = { ...point, id: "point-2", version: 1 };
     const result = applyChangesToSnapshot(
@@ -149,7 +277,14 @@ describe("server sync application", () => {
   it("marks an entity deleted on a delete change", () => {
     const result = applyChangesToSnapshot(
       snapshot(),
-      [change({ operation: "delete", patch: {}, baseVersion: 3 })],
+      [
+        change({
+          operation: "delete",
+          patch: {},
+          baseVersion: 3,
+          baseValues: { deletedAt: null }
+        })
+      ],
       options
     );
 
@@ -172,6 +307,7 @@ describe("server sync application", () => {
           entityName: "owner",
           entityId: "owner-1",
           baseVersion: 2,
+          baseValues: { deletedAt: null },
           patch: { deletedAt: later }
         })
       ],
@@ -202,6 +338,7 @@ describe("server sync application", () => {
           entityId: "owner-1",
           operation: "delete",
           baseVersion: 2,
+          baseValues: { deletedAt: null },
           patch: {}
         })
       ],

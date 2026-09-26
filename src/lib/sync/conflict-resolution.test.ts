@@ -89,6 +89,7 @@ const change: Change = {
   operation: "update",
   baseVersion: 1,
   clientId: "client-1",
+  sourceId: "source-A",
   patch: { ownerId: "owner-local" },
   syncedAt: null,
   createdAt: now,
@@ -99,6 +100,7 @@ const change: Change = {
 
 const conflict: Conflict = {
   id: "conflict-1",
+  sourceId: "source-A",
   entityName: "point",
   entityId: "point-1",
   field: "ownerId",
@@ -115,6 +117,20 @@ const conflict: Conflict = {
 };
 
 describe("resolveConflictLocal", () => {
+  it("does not consume a pending change from another spreadsheet", async () => {
+    const database = createDatabase({
+      changes: [change],
+      conflicts: [{ ...conflict, sourceId: "source-B", field: "__record__" }],
+      points: [point]
+    });
+
+    await resolveConflictLocal("conflict-1", "remote", { database, clock: () => resolvedAt });
+
+    expect((database.changes as unknown as FakeTable<Change>).items[0]).toMatchObject({
+      id: "change-1", sourceId: "source-A", syncedAt: null
+    });
+  });
+
   it("resolves as local and retries the pending change from the remote version", async () => {
     const database = createDatabase({
       changes: [change],
