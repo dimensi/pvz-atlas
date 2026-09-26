@@ -36,7 +36,6 @@ function statusClassName(status: PointStatus): string {
 export default function PointsListClient() {
   const {
     snapshot: state,
-    error: cacheError,
     isOnline,
     isLoadingCache,
     isRefreshing,
@@ -81,7 +80,6 @@ export default function PointsListClient() {
   }, [activeItem, items]);
   const hasLocalRows = state.points.length > 0 || state.owners.length > 0 || state.visits.length > 0;
   const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
-  const error = mutationError ?? cacheError;
 
   const runMutation = async (
     mutation: () => Promise<unknown>,
@@ -164,9 +162,7 @@ export default function PointsListClient() {
         </div>
       </section>
 
-      {error ? <div className="error-banner">{error}</div> : null}
-
-      {isRefreshing && hasLocalRows ? <p className="lead">Обновляю онлайн-данные...</p> : null}
+      {mutationError ? <div className="error-banner">{mutationError}</div> : null}
 
       {isLoadingCache ? (
         <section className="card">

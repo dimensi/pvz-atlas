@@ -5,6 +5,11 @@ const SHELL_CACHE_PREFIX = "pvz-atlas-shell-";
 const SHELL_READY_URL = "/__pvz_shell_ready__";
 const AUTH_CACHE_NAME = "pvz-atlas-auth-state";
 const LOGOUT_MARKER_URL = "/__pvz_logout_pending__";
+const MAP_TILE_CACHE_NAME = "pvz-atlas-map-tiles-v1";
+const MAP_TILE_META_CACHE_NAME = "pvz-atlas-map-tiles-meta-v1";
+const MAP_TILE_ORIGIN = "https://tile.openstreetmap.org";
+const MAX_MAP_TILES = 512;
+const DEFAULT_TILE_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const SHELL_ROUTES = ["/points", "/map", "/add", "/owners", "/sync"];
 const MAX_NEXT_ASSETS = 128;
 const PUBLIC_ASSET_URLS = [
@@ -46,8 +51,99 @@ async function hasPendingLogout() {
 async function clearShellCaches() {
   const names = await caches.keys();
   await Promise.all(
-    names.filter((name) => name.startsWith(SHELL_CACHE_PREFIX)).map((name) => caches.delete(name))
+    names
+      .filter(
+        (name) =>
+          name.startsWith(SHELL_CACHE_PREFIX) ||
+          name === MAP_TILE_CACHE_NAME ||
+          name === MAP_TILE_META_CACHE_NAME
+      )
+      .map((name) => caches.delete(name))
   );
+}
+
+function isMapTile(url) {
+  return (
+    url.origin === MAP_TILE_ORIGIN &&
+    /^\/(?:[0-9]|1[0-9]|2[0-2])\/\d+\/\d+\.png$/.test(url.pathname) &&
+    !url.search
+  );
+}
+
+function tileLifetime(response) {
+  const directives = response.headers.get("cache-control") ?? "";
+  if (/(?:^|,)\s*no-store(?:,|$)/i.test(directives)) return null;
+  const maxAge = directives.match(/(?:^|,)\s*max-age=(\d+)/i);
+  const staleIfError = directives.match(/(?:^|,)\s*stale-if-error=(\d+)/i);
+  const now = Date.now();
+  if (/(?:^|,)\s*no-cache(?:,|$)/i.test(directives)) {
+    return { freshUntil: now, staleUntil: now + Number(staleIfError?.[1] ?? 0) * 1000 };
+  }
+  if (!maxAge) {
+    const expiresAt = Date.parse(response.headers.get("expires") ?? "");
+    if (Number.isFinite(expiresAt)) {
+      return { freshUntil: expiresAt, staleUntil: expiresAt + Number(staleIfError?.[1] ?? 0) * 1000 };
+    }
+    return { freshUntil: now + DEFAULT_TILE_AGE_MS, staleUntil: now + DEFAULT_TILE_AGE_MS };
+  }
+  const freshUntil = now + Number(maxAge[1]) * 1000;
+  return { freshUntil, staleUntil: freshUntil + Number(staleIfError?.[1] ?? 0) * 1000 };
+}
+
+function fetchMapTile(request) {
+  // OSM permits CORS; a readable response lets us honor its caching headers.
+  return fetch(request.url, {
+      mode: "cors",
+      credentials: "omit",
+      referrer: `${self.location.origin}/`
+  });
+}
+
+async function loadMapTile(request) {
+  let tiles;
+  let metadata;
+  let cached;
+  let lifetime;
+  try {
+    tiles = await caches.open(MAP_TILE_CACHE_NAME);
+    metadata = await caches.open(MAP_TILE_META_CACHE_NAME);
+    cached = await tiles.match(request);
+    const age = await metadata.match(request);
+    lifetime = age ? await age.json() : null;
+  } catch {
+    // An unavailable CacheStorage must not break an online map.
+    return fetchMapTile(request);
+  }
+  if (cached && lifetime && Date.now() < lifetime.freshUntil) return cached;
+
+  try {
+    const response = await fetchMapTile(request);
+    if (!response.ok || !response.headers.get("content-type")?.startsWith("image/png")) {
+      if (cached && lifetime && Date.now() < lifetime.staleUntil) return cached;
+      return response;
+    }
+    const nextLifetime = tileLifetime(response);
+    try {
+      if (nextLifetime) {
+        await Promise.all([
+          tiles.put(request, response.clone()),
+          metadata.put(request, Response.json(nextLifetime))
+        ]);
+        const keys = await tiles.keys();
+        await Promise.all(keys.slice(0, -MAX_MAP_TILES).map(async (key) => {
+          await Promise.all([tiles.delete(key), metadata.delete(key)]);
+        }));
+      } else {
+        await Promise.all([tiles.delete(request), metadata.delete(request)]);
+      }
+    } catch {
+      // A full or unavailable CacheStorage must not hide a tile fetched online.
+    }
+    return response;
+  } catch (error) {
+    if (cached && lifetime && Date.now() < lifetime.staleUntil) return cached;
+    throw error;
+  }
 }
 
 async function prepareOfflineShell(generation) {
@@ -160,6 +256,8 @@ self.addEventListener("activate", (event) => {
                 name !== CACHE_NAME &&
                 name !== NEXT_ASSET_CACHE_NAME &&
                 name !== AUTH_CACHE_NAME &&
+                name !== MAP_TILE_CACHE_NAME &&
+                name !== MAP_TILE_META_CACHE_NAME &&
                 !name.startsWith(SHELL_CACHE_PREFIX)
             )
             .map((name) => caches.delete(name))
@@ -192,6 +290,11 @@ self.addEventListener("fetch", (event) => {
   }
 
   const url = new URL(event.request.url);
+
+  if (isMapTile(url)) {
+    event.respondWith(loadMapTile(event.request));
+    return;
+  }
 
   if (url.origin !== self.location.origin) {
     return;

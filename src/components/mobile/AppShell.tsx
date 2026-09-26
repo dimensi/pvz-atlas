@@ -7,10 +7,8 @@ import { ListTodo, LogOut, Map, Plus, Users } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { beginLocalLogout, finishPendingLogout, hasPendingLogout, localLogoutNoticeKey } from "@/lib/pwa/offline-shell";
 import { OfflineAwareLink } from "@/components/pwa/OfflineAwareLink";
-import { SyncReviewBanner } from "@/components/sync/SyncReviewBanner";
 import { SyncOverviewProvider } from "@/components/sync/SyncOverviewProvider";
 import { SyncStatusPill } from "@/components/sync/SyncStatusPill";
-import { SyncReplacementNotice } from "@/components/sync/SyncReplacementNotice";
 
 const tabs = [
   { href: "/points", label: "Список", icon: ListTodo },
@@ -84,8 +82,6 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <main className="main-content">
-        <SyncReviewBanner />
-        <SyncReplacementNotice />
         {children}
       </main>
       <nav className="bottom-nav" aria-label="Основная навигация">

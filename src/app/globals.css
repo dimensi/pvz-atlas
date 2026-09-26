@@ -171,6 +171,10 @@ select {
   text-overflow: ellipsis;
 }
 
+.sync-access-link:not([data-ready]) {
+  visibility: hidden;
+}
+
 .sync-access-link span {
   overflow: hidden;
   text-overflow: ellipsis;

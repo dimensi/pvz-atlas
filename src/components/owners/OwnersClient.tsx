@@ -103,7 +103,6 @@ function OwnerFields({
 export default function OwnersClient() {
   const {
     snapshot: state,
-    error: cacheError,
     isOnline,
     isLoadingCache,
     refreshCache,
@@ -157,7 +156,6 @@ export default function OwnersClient() {
     () => points.filter((point) => point.ownerId === activeOwnerId),
     [activeOwnerId, points]
   );
-  const error = mutationError ?? cacheError;
 
   const runMutation = async (
     mutation: () => Promise<unknown>,
@@ -320,7 +318,7 @@ export default function OwnersClient() {
         </Button>
       </form>
 
-      {error ? <div className="error-banner">{error}</div> : null}
+      {mutationError ? <div className="error-banner">{mutationError}</div> : null}
 
       {isLoadingCache ? (
         <section className="card">

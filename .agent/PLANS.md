@@ -1,5 +1,28 @@
 # ExecPlans
 
+## Offline Navigation in Installed PWA
+
+Status: verified locally
+
+Intent:
+- Make every primary tab and sync-status link work when the device has no network, including when `navigator.onLine` remains true in an installed PWA.
+- Show map tiles already viewed on this device when the map is reopened without network.
+
+Plan:
+- Reproduce an offline click in a production build with a complete cached shell and unchanged online signal.
+- Route app navigation through full document requests handled by the service worker, while leaving the local IndexedDB data flow intact.
+- Treat a failed network request as offline even when an installed PWA reports `navigator.onLine=true`; keep an HTTP server error distinct.
+- Cache only tiles requested by an actively viewed map. Reuse those tiles offline and retain normal OpenStreetMap attribution. Do not prefetch map regions.
+- Verify all primary tabs, the sync page, and map tiles offline in a real browser, then run lint, typecheck, tests, and build.
+- Review, publish through a squash merge, and verify deployment and public worker behavior.
+- Keep the global sync indicator calm across full offline-safe navigations: avoid showing a short background check, and show connection failures in the header rather than repeating warning banners on each data screen.
+
+Verification:
+- A production browser with a prepared shell opened every primary screen through the visible navigation while offline, including with `navigator.onLine=true`.
+- After viewing the map online, an offline reload with the browser HTTP cache cleared loaded all nine visible OSM tiles through the service worker. The map screenshot is in `docs/screenshots/offline-shell/`.
+- Lint, typecheck, 189 unit tests, and production build pass.
+- On a full online page transition, the visible header status stayed on the previous useful state throughout the short background check; the browser observed only one status label. Offline list, map, and details screens had no repeated connection banners, and the offline details screen hid its unusable manual refresh action.
+
 ## Offline App Shell After Cold Start
 
 Status: completed locally

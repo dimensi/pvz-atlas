@@ -57,7 +57,6 @@ function formatDistance(value: number | null): string | null {
 export default function LeafletMapClient() {
   const {
     snapshot: state,
-    error: cacheError,
     isOnline,
     isLoadingCache,
     isRefreshing,
@@ -125,7 +124,6 @@ export default function LeafletMapClient() {
 
   const hasLocalRows = state.points.length > 0 || state.owners.length > 0 || state.visits.length > 0;
   const isInitialOnlineLoad = isRefreshing && !hasLocalRows;
-  const error = mutationError ?? cacheError;
 
   const availableOwners = useMemo(
     () => state.owners.filter((owner) => owner.deletedAt === null),
@@ -250,9 +248,8 @@ export default function LeafletMapClient() {
         </div>
       </section>
 
-      {error ? <div className="error-banner">{error}</div> : null}
+      {mutationError ? <div className="error-banner">{mutationError}</div> : null}
       {locationError ? <div className="error-banner">{locationError}</div> : null}
-      {isRefreshing && hasLocalRows ? <p className="lead">Обновляю онлайн-данные...</p> : null}
 
       <section className="map-panel" aria-label="Карта ПВЗ">
         <div className="map-canvas">

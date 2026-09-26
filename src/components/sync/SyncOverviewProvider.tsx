@@ -34,6 +34,7 @@ interface StoredOverview {
 
 export interface SyncOverview extends StoredOverview {
   online: boolean;
+  ready: boolean;
   status: SyncStatusDisplay;
   refreshNow: () => Promise<void>;
   markNoticesRead: (through?: string) => Promise<void>;
@@ -90,6 +91,8 @@ async function readStoredOverview(): Promise<StoredOverview> {
 export function SyncOverviewProvider({ children }: { children: ReactNode }) {
   const [stored, setStored] = useState<StoredOverview>(emptyOverview);
   const [online, setOnline] = useState(true);
+  const [ready, setReady] = useState(false);
+  const [visibleCheckingAt, setVisibleCheckingAt] = useState<string | null>(null);
   const triggeredQueueRef = useRef("");
 
   const refreshNow = useCallback(async () => {
@@ -99,8 +102,10 @@ export function SyncOverviewProvider({ children }: { children: ReactNode }) {
     }
     try {
       await refreshOnlineCache();
-    } catch {
-      // The sync engine stores the failure state for the global status.
+      setOnline(true);
+    } catch (error) {
+      // Some installed PWAs keep navigator.onLine=true after connectivity is lost.
+      if (!navigator.onLine || error instanceof TypeError) setOnline(false);
     }
   }, []);
 
@@ -122,11 +127,17 @@ export function SyncOverviewProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const subscription = liveQuery(readStoredOverview).subscribe({
-      next: setStored,
-      error: () => setStored((current) => ({
-        ...current,
-        run: { state: "error", at: new Date().toISOString() }
-      }))
+      next: (overview) => {
+        setStored(overview);
+        setReady(true);
+      },
+      error: () => {
+        setStored((current) => ({
+          ...current,
+          run: { state: "error", at: new Date().toISOString() }
+        }));
+        setReady(true);
+      }
     });
     const handleOnline = () => {
       setOnline(true);
@@ -161,6 +172,14 @@ export function SyncOverviewProvider({ children }: { children: ReactNode }) {
     return () => window.clearTimeout(timeout);
   }, [online, refreshNow, stored.queueSignature, stored.review]);
 
+  useEffect(() => {
+    if (stored.run?.state !== "checking") return;
+    const startedAt = stored.run.at;
+    const elapsed = Date.now() - Date.parse(startedAt);
+    const timeout = window.setTimeout(() => setVisibleCheckingAt(startedAt), Math.max(0, 1200 - elapsed));
+    return () => window.clearTimeout(timeout);
+  }, [stored.run?.at, stored.run?.state]);
+
   const status = useMemo(() => deriveSyncStatus({
     online,
     review: stored.review,
@@ -169,10 +188,11 @@ export function SyncOverviewProvider({ children }: { children: ReactNode }) {
     pendingCount: stored.pendingCount,
     heldCount: stored.heldCount,
     unreadNoticeCount: stored.unreadNoticeCount,
-    replacementNotice: stored.replacementNotice
-  }), [online, stored]);
+    replacementNotice: stored.replacementNotice,
+    showChecking: stored.run?.state === "checking" && visibleCheckingAt === stored.run.at
+  }), [online, stored, visibleCheckingAt]);
 
-  const value: SyncOverview = { ...stored, online, status, refreshNow, markNoticesRead, acknowledgeReplacement };
+  const value: SyncOverview = { ...stored, online, ready, status, refreshNow, markNoticesRead, acknowledgeReplacement };
   return <SyncOverviewContext.Provider value={value}>{children}</SyncOverviewContext.Provider>;
 }
 
