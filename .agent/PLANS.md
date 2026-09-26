@@ -1,5 +1,35 @@
 # ExecPlans
 
+## Offline App Shell After Cold Start
+
+Status: completed locally
+
+Intent:
+- Let an operator reopen the installed PWA without network after a successful online login.
+- Keep the shell and all Next.js build assets it needs together across deployments.
+- Never mistake an authentication redirect for an app shell, and remove offline access after explicit logout.
+
+Journey:
+- After a successful login, the active service worker prepares the list, map, add, owners, and sync pages plus their build assets in the background.
+- When offline, a cold launch at the PWA start URL opens the list from IndexedDB; main-tab navigation also works by loading cached pages.
+- Online navigation checks the server first, so deploys and expired sessions take effect. A failed warm leaves the previous complete shell intact.
+- Explicit logout removes the offline shell even without network. A local logout marker blocks private pages and closes other open tabs until the server logout finishes after reconnection. The service worker never stores API responses or Google Sheets data.
+
+Implementation:
+- Generate a build-specific manifest of `/_next/static/` assets after `next build`, requiring every cached page to remain statically prerendered; keep it out of Git and copy it into the runtime image with `public/`.
+- Add an authenticated, atomic warm operation to the service worker. Only a complete set of HTML pages and build assets becomes an offline fallback.
+- Route offline main-tab clicks through full page navigation so App Router does not require a missing RSC response. Retain normal client navigation online.
+- Keep static asset caches separate from the shell; clear shell caches on logout and retain the pending logout marker across worker updates.
+
+Verification:
+- Unit tests cover install, authenticated warm, redirect rejection, failed build refresh, pending offline logout, and navigation policy without Sheets. All 181 tests pass; lint, typecheck, and production build pass.
+- A local production browser with a test login saved a point to IndexedDB, then opened `/points` in a new offline tab and navigated to `/map`. After offline logout, a new offline tab received the recovery page; CacheStorage contained no shell. On reconnection, `/points` redirected to login and server logout cleared the pending marker. A separate two-tab test confirmed logout redirects both already open tabs offline.
+- Mobile screenshots are in `docs/screenshots/offline-shell/`.
+
+Tradeoff:
+- Map tiles from OpenStreetMap are not bundled; the map screen can show pins without a base map while offline.
+- Offline access relies on the phone's local storage until the operator explicitly logs out or clears site data.
+
 ## Safe PWA Static Cache
 
 Status: completed

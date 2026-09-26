@@ -1,7 +1,7 @@
 "use client";
 
-import Link from "next/link";
 import { AlertTriangle, CheckCircle2, Clock3, RefreshCw, WifiOff } from "lucide-react";
+import { OfflineAwareLink } from "@/components/pwa/OfflineAwareLink";
 import { useSyncOverview } from "./SyncOverviewProvider";
 
 function shortLabel(kind: string, fullLabel: string, pendingCount: number, noticeCount: number): string {
@@ -27,7 +27,7 @@ export function SyncStatusPill() {
         : status.kind === "checking" ? RefreshCw : Clock3;
 
   return (
-    <Link
+    <OfflineAwareLink
       aria-label={`${status.label}. Открыть состояние данных`}
       className={`status-pill sync-access-link sync-access-${status.kind}`}
       href="/sync"
@@ -38,6 +38,6 @@ export function SyncStatusPill() {
       <span className="sync-pill-short">
         {shortLabel(status.kind, status.label, pendingCount, unreadNoticeCount)}
       </span>
-    </Link>
+    </OfflineAwareLink>
   );
 }

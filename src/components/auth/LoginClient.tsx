@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import Image from "next/image";
 import { useRouter, useSearchParams } from "next/navigation";
 import { LogIn } from "lucide-react";
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ApiError } from "@/lib/api/client";
 import { login } from "@/lib/api/auth-api";
+import { finishPendingLogout } from "@/lib/pwa/offline-shell";
 
 function normalizeNextPath(value: string | null): string {
   if (!value || !value.startsWith("/") || value.startsWith("//")) {
@@ -27,12 +28,20 @@ export function LoginClient() {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  useEffect(() => {
+    const retry = () => { void finishPendingLogout().catch(() => undefined); };
+    retry();
+    window.addEventListener("online", retry);
+    return () => window.removeEventListener("online", retry);
+  }, []);
+
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setIsSubmitting(true);
 
     try {
+      await finishPendingLogout();
       await login({ username, password });
       router.replace(normalizeNextPath(searchParams.get("next")));
       router.refresh();

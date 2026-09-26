@@ -1,6 +1,8 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { getSessionFromRequest } from "@/lib/auth/session";
 
+const localLogoutCookieName = "pvz_local_logout";
+
 const publicPaths = new Set([
   "/favicon.ico",
   "/manifest.webmanifest",
@@ -14,6 +16,7 @@ function isPublicPath(pathname: string): boolean {
   return (
     pathname === "/login" ||
     pathname === "/api/auth/login" ||
+    pathname === "/api/auth/logout" ||
     publicPaths.has(pathname) ||
     publicPrefixes.some((prefix) => pathname.startsWith(prefix))
   );
@@ -30,7 +33,9 @@ export async function proxy(request: NextRequest) {
     return NextResponse.next();
   }
 
-  const session = await getSessionFromRequest(request);
+  const session = request.cookies.get(localLogoutCookieName)?.value === "1"
+    ? null
+    : await getSessionFromRequest(request);
   if (session) {
     return NextResponse.next();
   }
