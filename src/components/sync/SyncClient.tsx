@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { AlertTriangle, CheckCircle2, RefreshCw } from "lucide-react";
 import type { Conflict, Owner, Point, Visit } from "@/lib/data-model/types";
 import { getBrandLabel } from "@/lib/brands";
@@ -11,6 +11,7 @@ import { useSyncOverview } from "./SyncOverviewProvider";
 import { SyncReviewBanner } from "./SyncReviewBanner";
 import { SyncReplacementNotice } from "./SyncReplacementNotice";
 import { syncErrorMessage } from "@/lib/sync/user-error";
+import { getOfflineReadiness, subscribeOfflineReadiness } from "@/lib/pwa/offline-readiness";
 
 interface UnappliedChangeNotice {
   id: string;
@@ -212,6 +213,7 @@ function downloadBackup(contents: unknown, filename: string): void {
 
 export default function SyncClient() {
   const overview = useSyncOverview();
+  const offlineReadiness = useSyncExternalStore(subscribeOfflineReadiness, getOfflineReadiness, () => "unknown");
   const { markNoticesRead } = overview;
   const [summary, setSummary] = useState<SyncSummary>(emptySummary);
   const [isSyncing, setIsSyncing] = useState(false);
@@ -329,6 +331,20 @@ export default function SyncClient() {
             : "Последней проверки пока нет"}
         </p>
       </section>
+
+      {process.env.NODE_ENV === "production" ? <section className="card sync-current-card" aria-labelledby="offline-readiness-heading">
+        <h3 id="offline-readiness-heading">Доступ без сети</h3>
+        <strong>{offlineReadiness === "ready" ? "Готов" : offlineReadiness === "unavailable" ? "Пока недоступен" : "Подготавливается"}</strong>
+        <p>
+          {offlineReadiness === "ready"
+            ? "Приложение можно закрыть и открыть без сети. Данные и изменения останутся на устройстве."
+            : offlineReadiness === "unavailable"
+              ? overview.online
+                ? "Не удалось сохранить приложение для работы без сети. Откройте его с подключением и попробуйте ещё раз позже."
+                : "Откройте приложение с подключением, чтобы подготовить работу без сети."
+              : "Сохраняю страницы приложения на этом устройстве. Оставайтесь в приложении с подключением."}
+        </p>
+      </section> : null}
 
       <section className="card sync-status-card" aria-labelledby="sync-device-heading">
         <div className="sync-status-copy">

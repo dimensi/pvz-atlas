@@ -219,7 +219,7 @@ function warmOfflineShell() {
 function offlineUnavailable() {
   return new Response(
     `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Нет сети · ПВЗ Органайзер</title><style>body{margin:0;background:#f8fafc;color:#172033;font:16px system-ui,-apple-system,sans-serif}main{box-sizing:border-box;max-width:440px;margin:12vh auto;padding:24px}img{width:52px;height:52px}h1{font-size:28px;line-height:1.2;margin:28px 0 12px}p{color:#526176;line-height:1.5;margin:0 0 28px}a{display:inline-block;padding:14px 20px;border-radius:12px;background:#0f766e;color:white;font-weight:700;text-decoration:none}</style></head><body><main><img alt="" src="/brand/logo.png"><h1>Нет сети</h1><p>Подключитесь к интернету и войдите в приложение. После этого оно снова будет открываться без сети.</p><a href="/points">Повторить</a></main></body></html>`,
-    { status: 503, headers: { "Content-Type": "text/html; charset=utf-8" } }
+    { status: 200, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } }
   );
 }
 
@@ -232,14 +232,33 @@ async function navigateWithOfflineFallback(request, pathname) {
     // Use the last complete shell only when the network request failed.
   }
 
-  const cache = await readyShellCache();
+  let cache;
+  try {
+    cache = await readyShellCache();
+  } catch {
+    // A broken CacheStorage must still produce a readable recovery page.
+    return serverResponse ?? offlineUnavailable();
+  }
   if (!cache) return serverResponse ?? offlineUnavailable();
   if (pathname === "/") return Response.redirect(new URL("/points", self.location.origin));
-  return (await cache.match(pathname)) ?? serverResponse ?? offlineUnavailable();
+  try {
+    return (await cache.match(pathname)) ?? serverResponse ?? offlineUnavailable();
+  } catch {
+    return serverResponse ?? offlineUnavailable();
+  }
 }
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PUBLIC_ASSET_URLS)));
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) =>
+      Promise.allSettled(PUBLIC_ASSET_URLS.map(async (url) => {
+        const response = await fetch(url);
+        if (response.ok && !response.redirected) await cache.put(url, response);
+      }))
+    ).catch(() => {
+      // A missing icon or unavailable cache must not prevent worker activation.
+    })
+  );
   self.skipWaiting();
 });
 
@@ -263,6 +282,9 @@ self.addEventListener("activate", (event) => {
             .map((name) => caches.delete(name))
         )
       )
+      .catch(() => {
+        // Cache cleanup is optional; still take control of this app session.
+      })
       .then(() => self.clients.claim())
   );
 });
@@ -272,7 +294,18 @@ self.addEventListener("message", (event) => {
     event.waitUntil(
       warmOfflineShell()
         .catch(() => false)
-        .then((ready) => event.ports[0]?.postMessage({ ready }))
+        .then(async (ready) => {
+          const usable = ready || Boolean(await readyShellCache().catch(() => null));
+          event.ports[0]?.postMessage({ ready: usable });
+        })
+    );
+  }
+
+  if (event.data?.type === "CHECK_OFFLINE_SHELL") {
+    event.waitUntil(
+      readyShellCache()
+        .then((cache) => event.ports[0]?.postMessage({ ready: Boolean(cache) }))
+        .catch(() => event.ports[0]?.postMessage({ ready: false }))
     );
   }
 

@@ -131,12 +131,26 @@ describe("service worker static cache", () => {
     const worker = createWorker();
     await worker.dispatch("install");
 
-    expect(worker.precached).toContain("/map-pins/pin-avito.png");
-    expect(worker.precached).toContain("/map-pins/pin-fivepost.png");
-    expect(worker.precached).toContain("/icons/icon-192.png");
-    expect(worker.precached).not.toContain("/points");
-    expect(worker.precached).not.toContain("/sync");
-    expect(worker.precached).not.toContain("/login");
+    const cached = [...(worker.entries.get("pvz-atlas-static-v6")?.keys() ?? [])];
+    expect(cached).toContain(`${origin}/map-pins/pin-avito.png`);
+    expect(cached).toContain(`${origin}/map-pins/pin-fivepost.png`);
+    expect(cached).toContain(`${origin}/icons/icon-192.png`);
+    expect(cached).not.toContain(`${origin}/points`);
+    expect(cached).not.toContain(`${origin}/sync`);
+    expect(cached).not.toContain(`${origin}/login`);
+  });
+
+  it("activates even if a nonessential asset cannot be cached", async () => {
+    const worker = createWorker();
+    worker.fetch.mockImplementation(async (request) =>
+      requestUrl(request).endsWith("/map-pins/pin-avito.png")
+        ? new Response("missing", { status: 404 })
+        : new Response("public asset")
+    );
+
+    await expect(worker.dispatch("install")).resolves.toBeUndefined();
+    expect(worker.entries.get("pvz-atlas-static-v6")?.has(`${origin}/icons/icon-192.png`)).toBe(true);
+    expect(worker.entries.get("pvz-atlas-static-v6")?.has(`${origin}/map-pins/pin-avito.png`)).toBe(false);
   });
 
   it("checks the network for app pages and login, and bypasses APIs and nonstatic Next requests", async () => {
@@ -306,7 +320,9 @@ describe("offline app shell", () => {
 
   it("warms all pages and build assets after authentication, then opens offline", async () => {
     const worker = authenticatedWorker();
+    expect(await worker.sendMessage("CHECK_OFFLINE_SHELL")).toEqual({ ready: false });
     expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: true });
+    expect(await worker.sendMessage("CHECK_OFFLINE_SHELL")).toEqual({ ready: true });
 
     const shell = worker.entries.get("pvz-atlas-shell-build-one");
     expect(shell?.has(`${origin}/__pvz_shell_ready__`)).toBe(true);
@@ -339,7 +355,7 @@ describe("offline app shell", () => {
     worker.setBuildId("build-two");
     worker.failNextAsset();
 
-    expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: false });
+    expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: true });
     expect(worker.entries.has("pvz-atlas-shell-build-one")).toBe(true);
     expect(worker.entries.has("pvz-atlas-shell-build-two")).toBe(false);
   });
@@ -351,7 +367,9 @@ describe("offline app shell", () => {
     expect(await worker.sendMessage("CLEAR_OFFLINE_SHELL")).toEqual({ cleared: true });
     expect(worker.entries.has("pvz-atlas-shell-build-one")).toBe(false);
     worker.fetch.mockRejectedValue(new Error("offline"));
-    expect((await worker.dispatch("fetch", request("/points", "navigate")))?.status).toBe(503);
+    const recovery = await worker.dispatch("fetch", request("/points", "navigate"));
+    expect(recovery?.status).toBe(200);
+    await expect(recovery?.text()).resolves.toContain("Нет сети");
   });
 
   it("blocks a retained shell while logout is pending and recovers login offline", async () => {
@@ -361,8 +379,18 @@ describe("offline app shell", () => {
     await authCache.put("/__pvz_logout_pending__", new Response("pending"));
     worker.fetch.mockRejectedValue(new Error("offline"));
 
-    expect((await worker.dispatch("fetch", request("/points", "navigate")))?.status).toBe(503);
-    expect((await worker.dispatch("fetch", request("/login", "navigate")))?.status).toBe(503);
+    expect((await worker.dispatch("fetch", request("/points", "navigate")))?.status).toBe(200);
+    expect((await worker.dispatch("fetch", request("/login", "navigate")))?.status).toBe(200);
     expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: false });
+  });
+
+  it("shows recovery HTML when offline cache access fails", async () => {
+    const worker = createWorker();
+    worker.fetch.mockRejectedValue(new Error("offline"));
+    vi.spyOn(worker.caches, "open").mockRejectedValueOnce(new Error("storage unavailable"));
+
+    const recovery = await worker.dispatch("fetch", request("/points", "navigate"));
+    expect(recovery?.status).toBe(200);
+    await expect(recovery?.text()).resolves.toContain("Нет сети");
   });
 });
