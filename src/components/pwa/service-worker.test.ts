@@ -9,25 +9,38 @@ const origin = "https://pvz.example";
 type WorkerRequest = { url: string; method: string; mode: string };
 type WorkerEvent = {
   request?: WorkerRequest;
+  data?: { type: string };
+  ports?: { postMessage: (value: unknown) => void }[];
   respondWith: (response: Promise<Response>) => void;
   waitUntil: (task: Promise<unknown>) => void;
 };
+
+function requestUrl(request: WorkerRequest | string): string {
+  return typeof request === "string" ? new URL(request, origin).href : request.url;
+}
 
 function createWorker() {
   const handlers = new Map<string, (event: WorkerEvent) => void>();
   const entries = new Map<string, Map<string, Response>>();
   const precached: string[] = [];
-  const fetch = vi.fn(async () => new Response("static asset"));
+  const fetch = vi.fn<(request: WorkerRequest | string, options?: RequestInit) => Promise<Response>>(
+    async () => new Response("static asset")
+  );
   const cacheFor = (name: string) => ({
     async addAll(urls: string[]) {
       precached.push(...urls);
+      for (const url of urls) {
+        const response = await fetch(url);
+        if (!response.ok) throw new Error(`Cannot cache ${url}`);
+        await cacheFor(name).put(url, response);
+      }
     },
-    async match(request: WorkerRequest) {
-      return entries.get(name)?.get(request.url)?.clone();
+    async match(request: WorkerRequest | string) {
+      return entries.get(name)?.get(requestUrl(request))?.clone();
     },
-    async put(request: WorkerRequest, response: Response) {
+    async put(request: WorkerRequest | string, response: Response) {
       const cache = entries.get(name) ?? new Map<string, Response>();
-      cache.set(request.url, response);
+      cache.set(requestUrl(request), response);
       entries.set(name, cache);
     },
     async keys() {
@@ -47,6 +60,13 @@ function createWorker() {
     },
     async delete(name: string) {
       return entries.delete(name);
+    },
+    async match(request: WorkerRequest | string) {
+      for (const cache of entries.values()) {
+        const response = cache.get(requestUrl(request));
+        if (response) return response.clone();
+      }
+      return undefined;
     }
   };
 
@@ -61,7 +81,8 @@ function createWorker() {
     },
     caches,
     fetch,
-    URL
+    URL,
+    Response
   });
 
   async function dispatch(name: string, request?: WorkerRequest) {
@@ -81,7 +102,20 @@ function createWorker() {
     return result;
   }
 
-  return { caches, dispatch, entries, fetch, precached };
+  async function sendMessage(type: string): Promise<{ ready?: boolean; cleared?: boolean } | undefined> {
+    const tasks: Promise<unknown>[] = [];
+    let message: { ready?: boolean; cleared?: boolean } | undefined;
+    handlers.get("message")?.({
+      data: { type },
+      ports: [{ postMessage(value) { message = value as typeof message; } }],
+      respondWith() {},
+      waitUntil(task) { tasks.push(task); }
+    });
+    await Promise.all(tasks);
+    return message;
+  }
+
+  return { caches, dispatch, entries, fetch, precached, sendMessage };
 }
 
 function request(path: string, mode = "cors"): WorkerRequest {
@@ -101,14 +135,14 @@ describe("service worker static cache", () => {
     expect(worker.precached).not.toContain("/login");
   });
 
-  it("bypasses page navigation, API responses, and nonstatic Next requests", async () => {
+  it("checks the network for app pages and login, and bypasses APIs and nonstatic Next requests", async () => {
     const worker = createWorker();
 
-    expect(await worker.dispatch("fetch", request("/points", "navigate"))).toBeUndefined();
-    expect(await worker.dispatch("fetch", request("/login", "navigate"))).toBeUndefined();
+    expect((await worker.dispatch("fetch", request("/points", "navigate")))?.status).toBe(200);
+    expect((await worker.dispatch("fetch", request("/login", "navigate")))?.status).toBe(200);
     expect(await worker.dispatch("fetch", request("/api/sync/pull"))).toBeUndefined();
     expect(await worker.dispatch("fetch", request("/_next/image?url=%2Fbrand%2Flogo.png"))).toBeUndefined();
-    expect(worker.fetch).not.toHaveBeenCalled();
+    expect(worker.fetch).toHaveBeenCalledTimes(2);
   });
 
   it("serves previously loaded Next build assets from its static cache", async () => {
@@ -149,6 +183,8 @@ describe("service worker static cache", () => {
     await worker.caches.open("pvz-atlas-v5");
     await worker.caches.open("pvz-atlas-static-v6");
     await worker.caches.open("pvz-atlas-next-assets-v6");
+    await worker.caches.open("pvz-atlas-shell-old-build");
+    await worker.caches.open("pvz-atlas-auth-state");
     await worker.caches.open("another-app-cache");
 
     await worker.dispatch("activate");
@@ -156,7 +192,100 @@ describe("service worker static cache", () => {
     expect([...worker.entries.keys()]).toEqual([
       "pvz-atlas-static-v6",
       "pvz-atlas-next-assets-v6",
+      "pvz-atlas-shell-old-build",
+      "pvz-atlas-auth-state",
       "another-app-cache"
     ]);
+  });
+});
+
+describe("offline app shell", () => {
+  const routes = ["/points", "/map", "/add", "/owners", "/sync"];
+  const asset = "/_next/static/chunks/app-abc123.js";
+
+  function authenticatedWorker() {
+    const worker = createWorker();
+    let buildId = "build-one";
+    let failAsset = false;
+    worker.fetch.mockImplementation(async (request) => {
+      const pathname = new URL(requestUrl(request)).pathname;
+      if (pathname === "/offline-assets.json") {
+        return Response.json({ buildId, assets: [asset] });
+      }
+      if (routes.includes(pathname)) {
+        return new Response(`<main>${pathname}</main>`, {
+          headers: { "Content-Type": "text/html" }
+        });
+      }
+      if (pathname === asset && failAsset) return new Response("missing", { status: 404 });
+      return new Response("static asset");
+    });
+    return {
+      ...worker,
+      setBuildId(value: string) { buildId = value; },
+      failNextAsset() { failAsset = true; }
+    };
+  }
+
+  it("warms all pages and build assets after authentication, then opens offline", async () => {
+    const worker = authenticatedWorker();
+    expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: true });
+
+    const shell = worker.entries.get("pvz-atlas-shell-build-one");
+    expect(shell?.has(`${origin}/__pvz_shell_ready__`)).toBe(true);
+    expect(shell?.has(`${origin}/map`)).toBe(true);
+    expect(shell?.has(`${origin}${asset}`)).toBe(true);
+
+    worker.fetch.mockRejectedValue(new Error("offline"));
+    expect((await worker.dispatch("fetch", request("/points", "navigate")))?.text()).resolves.toContain("/points");
+    expect((await worker.dispatch("fetch", request("/map", "navigate")))?.text()).resolves.toContain("/map");
+    expect((await worker.dispatch("fetch", request(asset)))?.status).toBe(200);
+  });
+
+  it("does not cache a login redirect as the offline shell", async () => {
+    const worker = authenticatedWorker();
+    worker.fetch.mockImplementation(async (request) => {
+      const pathname = new URL(requestUrl(request)).pathname;
+      if (pathname === "/offline-assets.json") {
+        return Response.json({ buildId: "build-one", assets: [asset] });
+      }
+      return Response.redirect(`${origin}/login`, 307);
+    });
+
+    expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: false });
+    expect(worker.entries.has("pvz-atlas-shell-build-one")).toBe(false);
+  });
+
+  it("keeps the previous complete build when refreshing the shell fails", async () => {
+    const worker = authenticatedWorker();
+    expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: true });
+    worker.setBuildId("build-two");
+    worker.failNextAsset();
+
+    expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: false });
+    expect(worker.entries.has("pvz-atlas-shell-build-one")).toBe(true);
+    expect(worker.entries.has("pvz-atlas-shell-build-two")).toBe(false);
+  });
+
+  it("removes the offline shell after logout", async () => {
+    const worker = authenticatedWorker();
+    expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: true });
+
+    expect(await worker.sendMessage("CLEAR_OFFLINE_SHELL")).toEqual({ cleared: true });
+    expect(worker.entries.has("pvz-atlas-shell-build-one")).toBe(false);
+    worker.fetch.mockRejectedValue(new Error("offline"));
+    expect((await worker.dispatch("fetch", request("/points", "navigate")))?.status).toBe(503);
+  });
+
+  it("blocks a retained shell while logout is pending and recovers login offline", async () => {
+    const worker = authenticatedWorker();
+    expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: true });
+    const authCache = await worker.caches.open("pvz-atlas-auth-state");
+    await authCache.put("/__pvz_logout_pending__", new Response("pending"));
+    worker.fetch.mockRejectedValue(new Error("offline"));
+
+    expect((await worker.dispatch("fetch", request("/points", "navigate")))?.status).toBe(503);
+    expect((await worker.dispatch("fetch", request("/login", "navigate")))?.status).toBe(503);
+    expect(await worker.sendMessage("WARM_OFFLINE_SHELL")).toEqual({ ready: false });
   });
 });

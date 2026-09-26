@@ -5,7 +5,7 @@
   "packageManager": "pnpm@10.28.2",
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "next build && node scripts/generate-offline-assets.mjs",
     "deploy:home": "bash scripts/deploy-home.sh",
     "start": "next start",
     "lint": "eslint .",
