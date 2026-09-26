@@ -1,5 +1,26 @@
 # ExecPlans
 
+## Safe PWA Static Cache
+
+Status: completed
+
+Intent:
+- Keep the existing Next.js PWA registration and cache static assets that the field app actually uses.
+- Prevent the service worker from storing authenticated pages, login redirects, API responses, or other private data.
+- Let the browser check for a fresh worker after deploys and remove the old page cache.
+
+Implementation:
+- Restrict the worker to public app assets and previously requested `/_next/static/` files. Leave navigation and API requests to Next.js and the browser.
+- Keep map pins and install icons available after they have been cached, without adding a production dependency.
+- Add a worker-specific no-store response header and request fresh worker bytes during registration.
+
+Verification:
+- Mocked CacheStorage tests cover public precache, navigation/API bypass, static hits, redirected responses, bounded Next asset storage, and old-cache cleanup.
+- Lint, typecheck, 175 unit tests, and production build pass. A local production server returns `no-cache, no-store` for `/sw.js` and `max-age=31536000, immutable` for Next static assets. The latter already applied in production before this change, so no online speed increase is claimed.
+
+Tradeoff:
+- Reloading a closed app with no network requires an authenticated offline shell. That is outside this static-cache change; an already open tab continues using IndexedDB offline.
+
 ## Sync Status User Journey
 
 Status: completed in the isolated worktree; not deployed

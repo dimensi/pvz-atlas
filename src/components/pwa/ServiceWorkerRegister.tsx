@@ -9,7 +9,7 @@ export function ServiceWorkerRegister() {
     }
 
     const register = () => {
-      navigator.serviceWorker.register("/sw.js").catch(() => {
+      navigator.serviceWorker.register("/sw.js", { updateViaCache: "none" }).catch(() => {
         // Installability should not block app use if registration fails.
       });
     };

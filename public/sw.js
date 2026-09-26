@@ -1,11 +1,8 @@
-const CACHE_NAME = "pvz-atlas-v5";
-const APP_SHELL_URLS = [
-  "/",
-  "/points",
-  "/map",
-  "/add",
-  "/owners",
-  "/sync",
+const CACHE_NAME = "pvz-atlas-static-v6";
+const NEXT_ASSET_CACHE_NAME = "pvz-atlas-next-assets-v6";
+const CACHE_PREFIX = "pvz-atlas-";
+const MAX_NEXT_ASSETS = 128;
+const PUBLIC_ASSET_URLS = [
   "/manifest.webmanifest",
   "/favicon.ico",
   "/apple-touch-icon.png",
@@ -21,14 +18,10 @@ const APP_SHELL_URLS = [
   "/icons/icon-maskable-192.png",
   "/icons/icon-maskable-512.png"
 ];
+const publicAssetPaths = new Set(PUBLIC_ASSET_URLS);
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(APP_SHELL_URLS))
-      .catch(() => undefined)
-  );
+  event.waitUntil(caches.open(CACHE_NAME).then((cache) => cache.addAll(PUBLIC_ASSET_URLS)));
   self.skipWaiting();
 });
 
@@ -37,63 +30,56 @@ self.addEventListener("activate", (event) => {
     caches
       .keys()
       .then((names) =>
-        Promise.all(names.filter((name) => name !== CACHE_NAME).map((name) => caches.delete(name)))
+        Promise.all(
+          names
+            .filter(
+              (name) =>
+                name.startsWith(CACHE_PREFIX) &&
+                name !== CACHE_NAME &&
+                name !== NEXT_ASSET_CACHE_NAME
+            )
+            .map((name) => caches.delete(name))
+        )
       )
       .then(() => self.clients.claim())
   );
 });
 
 self.addEventListener("fetch", (event) => {
-  if (event.request.method !== "GET") {
+  if (event.request.method !== "GET" || event.request.mode === "navigate") {
     return;
   }
 
   const url = new URL(event.request.url);
 
-  if (url.origin !== self.location.origin || url.pathname.startsWith("/api/")) {
+  if (url.origin !== self.location.origin) {
     return;
   }
 
-  if (url.pathname.startsWith("/_next/")) {
-    return;
-  }
-
-  if (event.request.mode === "navigate") {
-    event.respondWith(
-      fetch(event.request)
-        .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-          return response;
-        })
-        .catch(async () => {
-          return (
-            (await caches.match(event.request)) ??
-            (await caches.match("/points")) ??
-            new Response("Приложение недоступно без сети.", {
-              headers: { "Content-Type": "text/plain; charset=utf-8" },
-              status: 503
-            })
-          );
-        })
-    );
+  const isNextAsset = url.pathname.startsWith("/_next/static/");
+  if (!publicAssetPaths.has(url.pathname) && !isNextAsset) {
     return;
   }
 
   event.respondWith(
-    caches.match(event.request).then((cached) => {
+    caches.open(isNextAsset ? NEXT_ASSET_CACHE_NAME : CACHE_NAME).then(async (cache) => {
+      const cached = await cache.match(event.request);
       if (cached) {
         return cached;
       }
 
-      return fetch(event.request).then((response) => {
-        if (response.ok) {
-          const copy = response.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        }
+      const response = await fetch(event.request);
+      if (response.ok && !response.redirected) {
+        event.waitUntil(
+          cache.put(event.request, response.clone()).then(async () => {
+            if (!isNextAsset) return;
+            const keys = await cache.keys();
+            await Promise.all(keys.slice(0, -MAX_NEXT_ASSETS).map((key) => cache.delete(key)));
+          })
+        );
+      }
 
-        return response;
-      });
+      return response;
     })
   );
 });
