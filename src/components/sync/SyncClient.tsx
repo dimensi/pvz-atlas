@@ -8,6 +8,8 @@ import { db } from "@/lib/indexeddb/db";
 import { runSync } from "@/lib/sync/engine";
 import { HELD_RECORDS_BACKUP_META_KEY, PREVIOUS_DATA_BACKUPS_META_KEY, STAGED_SNAPSHOT_META_KEY, SYNC_SOURCE_META_KEY, type HeldRecordBackup, type PreviousDataBackup } from "@/lib/sync/meta";
 import { useSyncOverview } from "./SyncOverviewProvider";
+import { SyncReviewBanner } from "./SyncReviewBanner";
+import { SyncReplacementNotice } from "./SyncReplacementNotice";
 import { syncErrorMessage } from "@/lib/sync/user-error";
 
 interface UnappliedChangeNotice {
@@ -296,6 +298,8 @@ export default function SyncClient() {
 
   return (
     <div className="page-stack">
+      <SyncReviewBanner />
+      <SyncReplacementNotice />
       <section>
         <h2 className="page-title">Данные и связь</h2>
         <p className="lead">
@@ -310,7 +314,7 @@ export default function SyncClient() {
           {!overview.online
             ? "Сейчас видны данные, сохранённые на устройстве. Новые правки отправятся при подключении."
             : overview.review
-              ? "Данные таблицы пока не применены. Обновите их по предупреждению выше."
+              ? "Данные таблицы пока не применены. Обновите их в этом разделе."
               : overview.run?.state === "error"
                 ? "Не удалось проверить таблицу. Данные на устройстве доступны; попробуйте ещё раз."
                 : overview.run?.state === "checking"
@@ -366,10 +370,12 @@ export default function SyncClient() {
             {status}
           </p>
         ) : null}
-        <button className="button sync-refresh-button" type="button" onClick={handleSync} disabled={isSyncing || !overview.online || overview.run?.state === "checking"}>
-          <RefreshCw size={18} aria-hidden="true" />
-          {isSyncing ? "Проверяю..." : "Проверить сейчас"}
-        </button>
+        {overview.online ? (
+          <button className="button sync-refresh-button" type="button" onClick={handleSync} disabled={isSyncing || overview.run?.state === "checking"}>
+            <RefreshCw size={18} aria-hidden="true" />
+            {isSyncing ? "Проверяю..." : "Проверить сейчас"}
+          </button>
+        ) : null}
       </section>
 
       {summary.unappliedChanges.length > 0 ? (

@@ -53,6 +53,13 @@ describe("operator sync status", () => {
     });
   });
 
+  it("keeps the last useful state during a short background check", () => {
+    const checking = { ...base, run: { state: "checking" as const, at: base.lastPullServerTime! } };
+    expect(deriveSyncStatus({ ...checking, showChecking: false }).kind).toBe("verified");
+    expect(deriveSyncStatus({ ...checking, pendingCount: 1, showChecking: false }).kind).toBe("pending");
+    expect(deriveSyncStatus({ ...checking, showChecking: true }).kind).toBe("checking");
+  });
+
   it("keeps an automatic collision visible until its history is opened", () => {
     const notice: Conflict = {
       id: "notice-one", sourceId: "source-A", localNotice: true,

@@ -44,7 +44,11 @@ function createWorker() {
       entries.set(name, cache);
     },
     async keys() {
-      return [...(entries.get(name)?.keys() ?? [])].map((url) => request(url.slice(origin.length)));
+      return [...(entries.get(name)?.keys() ?? [])].map((url) => ({
+        url,
+        method: "GET",
+        mode: "cors"
+      }));
     },
     async delete(request: WorkerRequest) {
       return entries.get(name)?.delete(request.url) ?? false;
@@ -185,6 +189,8 @@ describe("service worker static cache", () => {
     await worker.caches.open("pvz-atlas-next-assets-v6");
     await worker.caches.open("pvz-atlas-shell-old-build");
     await worker.caches.open("pvz-atlas-auth-state");
+    await worker.caches.open("pvz-atlas-map-tiles-v1");
+    await worker.caches.open("pvz-atlas-map-tiles-meta-v1");
     await worker.caches.open("another-app-cache");
 
     await worker.dispatch("activate");
@@ -194,8 +200,79 @@ describe("service worker static cache", () => {
       "pvz-atlas-next-assets-v6",
       "pvz-atlas-shell-old-build",
       "pvz-atlas-auth-state",
+      "pvz-atlas-map-tiles-v1",
+      "pvz-atlas-map-tiles-meta-v1",
       "another-app-cache"
     ]);
+  });
+});
+
+describe("OpenStreetMap tile cache", () => {
+  const tile: WorkerRequest = {
+    url: "https://tile.openstreetmap.org/15/19816/10276.png",
+    method: "GET",
+    mode: "no-cors"
+  };
+
+  it("caches a viewed tile and reuses it without network", async () => {
+    const worker = createWorker();
+    worker.fetch.mockResolvedValueOnce(new Response("tile image", {
+      headers: {
+        "Content-Type": "image/png",
+        "Cache-Control": "max-age=3600, stale-if-error=604800"
+      }
+    }));
+
+    await expect((await worker.dispatch("fetch", tile))?.text()).resolves.toBe("tile image");
+    expect(worker.entries.get("pvz-atlas-map-tiles-v1")?.has(tile.url)).toBe(true);
+    expect(worker.fetch).toHaveBeenCalledWith(tile.url, expect.objectContaining({
+      mode: "cors",
+      referrer: `${origin}/`
+    }));
+    worker.fetch.mockRejectedValue(new Error("offline"));
+    await expect((await worker.dispatch("fetch", tile))?.text()).resolves.toBe("tile image");
+    expect(worker.fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not intercept other external URLs or cache rejected tile responses", async () => {
+    const worker = createWorker();
+    expect(await worker.dispatch("fetch", { ...tile, url: "https://example.com/15/1/1.png" })).toBeUndefined();
+    worker.fetch.mockResolvedValueOnce(new Response("blocked", { status: 403 }));
+    expect((await worker.dispatch("fetch", tile))?.status).toBe(403);
+    expect(worker.entries.get("pvz-atlas-map-tiles-v1")?.size).toBe(0);
+  });
+
+  it("loads tiles from the network when CacheStorage cannot be read", async () => {
+    const worker = createWorker();
+    vi.spyOn(worker.caches, "open").mockRejectedValueOnce(new Error("storage unavailable"));
+    worker.fetch.mockResolvedValueOnce(new Response("network tile", {
+      headers: { "Content-Type": "image/png" }
+    }));
+
+    await expect((await worker.dispatch("fetch", tile))?.text()).resolves.toBe("network tile");
+    expect(worker.fetch).toHaveBeenCalledOnce();
+  });
+
+  it("uses a still valid stale tile when the tile server returns an error", async () => {
+    const worker = createWorker();
+    await (await worker.caches.open("pvz-atlas-map-tiles-v1")).put(tile, new Response("cached tile"));
+    await (await worker.caches.open("pvz-atlas-map-tiles-meta-v1")).put(tile, Response.json({
+      freshUntil: Date.now() - 1000,
+      staleUntil: Date.now() + 1000
+    }));
+    worker.fetch.mockResolvedValueOnce(new Response("failure", { status: 503 }));
+
+    await expect((await worker.dispatch("fetch", tile))?.text()).resolves.toBe("cached tile");
+  });
+
+  it("clears map tiles on logout", async () => {
+    const worker = createWorker();
+    await (await worker.caches.open("pvz-atlas-map-tiles-v1")).put(tile, new Response("tile"));
+    await (await worker.caches.open("pvz-atlas-map-tiles-meta-v1")).put(tile, Response.json({ freshUntil: Date.now() + 1000 }));
+
+    expect(await worker.sendMessage("CLEAR_OFFLINE_SHELL")).toEqual({ cleared: true });
+    expect(worker.entries.has("pvz-atlas-map-tiles-v1")).toBe(false);
+    expect(worker.entries.has("pvz-atlas-map-tiles-meta-v1")).toBe(false);
   });
 });
 
@@ -237,8 +314,8 @@ describe("offline app shell", () => {
     expect(shell?.has(`${origin}${asset}`)).toBe(true);
 
     worker.fetch.mockRejectedValue(new Error("offline"));
-    expect((await worker.dispatch("fetch", request("/points", "navigate")))?.text()).resolves.toContain("/points");
-    expect((await worker.dispatch("fetch", request("/map", "navigate")))?.text()).resolves.toContain("/map");
+    await expect((await worker.dispatch("fetch", request("/points", "navigate")))?.text()).resolves.toContain("/points");
+    await expect((await worker.dispatch("fetch", request("/map", "navigate")))?.text()).resolves.toContain("/map");
     expect((await worker.dispatch("fetch", request(asset)))?.status).toBe(200);
   });
 

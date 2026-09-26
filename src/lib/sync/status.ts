@@ -22,6 +22,7 @@ export interface SyncStatusInput {
   heldCount: number;
   unreadNoticeCount: number;
   replacementNotice: CacheReplacementNotice | null;
+  showChecking?: boolean;
 }
 
 export interface SyncStatusDisplay {
@@ -70,7 +71,7 @@ export function deriveSyncStatus(input: SyncStatusInput): SyncStatusDisplay {
   if (input.run?.state === "error") {
     return { kind: "error", label: "Не удалось обновить", needsAttention: true };
   }
-  if (input.run?.state === "checking") {
+  if (input.run?.state === "checking" && input.showChecking !== false) {
     return {
       kind: "checking",
       label: input.pendingCount > 0 ? "Отправляю правки" : "Проверяю данные",

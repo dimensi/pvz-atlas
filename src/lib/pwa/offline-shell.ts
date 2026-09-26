@@ -1,6 +1,7 @@
 import { logout } from "@/lib/api/auth-api";
 
 export const shellCachePrefix = "pvz-atlas-shell-";
+const mapTileCacheNames = new Set(["pvz-atlas-map-tiles-v1", "pvz-atlas-map-tiles-meta-v1"]);
 const authCacheName = "pvz-atlas-auth-state";
 const logoutMarkerUrl = "/__pvz_logout_pending__";
 export const localLogoutCookieName = "pvz_local_logout";
@@ -78,6 +79,7 @@ export async function clearOfflineShell(): Promise<void> {
 
   const names = await caches.keys();
   await Promise.all(
-    names.filter((name) => name.startsWith(shellCachePrefix)).map((name) => caches.delete(name))
+    names.filter((name) => name.startsWith(shellCachePrefix) || mapTileCacheNames.has(name))
+      .map((name) => caches.delete(name))
   );
 }
