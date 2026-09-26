@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2, Clock3, RefreshCw, WifiOff } from "lucide-
 import { OfflineAwareLink } from "@/components/pwa/OfflineAwareLink";
 import type { SyncStatusDisplay } from "@/lib/sync/status";
 import { useSyncOverview } from "./SyncOverviewProvider";
+import { getOfflineReadiness, subscribeOfflineReadiness } from "@/lib/pwa/offline-readiness";
 
 const lastStatusKey = "pvz-atlas-last-sync-status";
 const statusChangedEvent = "pvz-atlas-sync-status-changed";
@@ -52,12 +53,16 @@ function shortLabel(kind: string, fullLabel: string, pendingCount: number, notic
 
 export function SyncStatusPill() {
   const { status, pendingCount, unreadNoticeCount, ready, online, run } = useSyncOverview();
+  const offlineReadiness = useSyncExternalStore(subscribeOfflineReadiness, getOfflineReadiness, () => "unknown");
   const lastStatusSnapshot = useSyncExternalStore(subscribeToLastStatus, getLastStatusSnapshot, () => null);
   const lastStatus = useMemo(() => readLastStatus(lastStatusSnapshot), [lastStatusSnapshot]);
 
   const remembering = online && run?.state === "checking" &&
     (status.kind === "verified" || status.kind === "never") && lastStatus;
-  const display = remembering ? lastStatus : status;
+  const currentDisplay = remembering ? lastStatus : status;
+  const display: SyncStatusDisplay = offlineReadiness === "unavailable" && !currentDisplay.needsAttention
+    ? { kind: "error", label: "Офлайн не готов", needsAttention: true }
+    : currentDisplay;
 
   useEffect(() => {
     if (!ready || (online && run?.state === "checking")) return;

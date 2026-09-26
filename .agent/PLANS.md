@@ -1,5 +1,29 @@
 # ExecPlans
 
+## iOS Home Screen Offline Launch Recovery
+
+Status: ready for release; installed iOS cold launch remains unverified in Simulator
+
+Intent:
+- Make the installed iOS web app reliably open after an online preparation when the phone is in airplane mode.
+- Never imply offline readiness before the standalone app has an active service worker and at least one complete usable shell. A previous complete build remains available while a new build is warming.
+- Give a useful recovery screen and a clear next step if offline preparation is impossible, instead of a blank screen where the worker can handle navigation.
+
+Observed failure:
+- The operator's Home Screen app opened to a blank white view in airplane mode after the prior release. The earlier browser check was in Chromium and manually confirmed a prepared CacheStorage; it did not validate the standalone iOS installation path.
+
+Investigation and implementation:
+- Reproduce the online install/open, app restart, and airplane-mode launch with iOS Simulator or a connected WebKit device when possible. Inspect the standalone app's own worker, cache, and startup URL, not Safari's data store.
+- Check worker registration, installation, activation, and the unauthenticated/authenticated shell warm path. Make warm completion observable and retry failed preparation while online; preserve the prior valid shell on errors.
+- Keep the ready indication simple and separate from data sync status. Verify that login, logout, and an incomplete shell cannot expose private cached pages.
+- Add focused tests for the actual failure path, run lint/typecheck/tests/build, then verify the iOS/WebKit launch and publish only after the result is concrete.
+
+Verification:
+- An authenticated local production build reported a controlled service worker and a complete cached shell without manual preparation. Chromium reopened `/points` with network emulation disabled.
+- A Home Screen app on iPhone 17 Simulator opened the local production login page, but Simulator input/Web Inspector problems prevented authenticated cache inspection and cold launch. The operator reported that the real iOS PWA now opens offline after its worker activated.
+- Lint, typecheck, 192 unit tests, and production build pass. `docs/screenshots/offline-shell/offline-readiness-ready.png` shows the separate offline readiness state at mobile width.
+
+
 ## Offline Navigation in Installed PWA
 
 Status: verified locally
