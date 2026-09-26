@@ -52,10 +52,14 @@ export const changeSchema = syncEntitySchema.extend({
   baseVersion: z.number().int().nonnegative(),
   clientId: z.string().min(1),
   patch: z.record(z.string(), z.unknown()),
+  sourceId: z.string().min(1).optional(),
+  baseValues: z.record(z.string(), z.unknown()).optional(),
   syncedAt: isoDate.nullable()
 });
 
 export const conflictSchema = syncEntitySchema.extend({
+  sourceId: z.string().min(1).optional(),
+  localNotice: z.boolean().optional(),
   entityName: z.enum(["point", "owner", "visit"]),
   entityId: z.string().min(1),
   field: z.string().min(1),

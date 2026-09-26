@@ -1,8 +1,17 @@
 import { ZodError } from "zod";
 import type { Change, Conflict, Owner, Point, Visit } from "@/lib/data-model/types";
-import { getSheetsSnapshot, invalidateSheetsSnapshot } from "@/lib/sheets/cache";
-import { GoogleSheetsConfigError } from "@/lib/sheets/google-client";
-import { writeSheetsChanges, type SheetsSnapshot, type SheetsWriteSet } from "@/lib/sheets/adapter";
+import { invalidateSheetsSnapshot } from "@/lib/sheets/cache";
+import {
+  readSheetsSnapshot,
+  writeSheetsChanges,
+  type SheetsSnapshot,
+  type SheetsWriteSet
+} from "@/lib/sheets/adapter";
+import {
+  createGoogleSheetsValuesClient,
+  GoogleSheetsConfigError
+} from "@/lib/sheets/google-client";
+import { getConfiguredSheetSourceId } from "@/lib/sheets/source-id";
 import { applyChangesToSnapshot } from "@/lib/sync/server-apply";
 import { pushRequestSchema, pushResponseSchema } from "@/lib/sync/contracts";
 import { jsonError, parseJsonBody } from "@/lib/validation/api";
@@ -27,7 +36,7 @@ const findAppliedEntity = (
 const buildWriteSet = (
   originalSnapshot: SheetsSnapshot,
   nextSnapshot: SheetsSnapshot,
-  appliedChanges: Change[],
+  submittedChanges: Change[],
   changesLog: Change[],
   conflicts: SheetsWriteSet["conflicts"],
   resolvedConflicts: Conflict[] | undefined
@@ -36,7 +45,7 @@ const buildWriteSet = (
   const owners = new Map<string, Owner>();
   const visits = new Map<string, Visit>();
 
-  for (const change of appliedChanges) {
+  for (const change of submittedChanges) {
     const entity = findAppliedEntity(nextSnapshot, change);
     if (!entity) {
       continue;
@@ -51,10 +60,11 @@ const buildWriteSet = (
     }
   }
 
-  const newConflicts =
-    conflicts?.filter(
-      (conflict) => !originalSnapshot.conflicts.some((existing) => existing.id === conflict.id)
-    ) ?? [];
+  const conflictsToWrite =
+    conflicts?.filter((conflict) => {
+      const existing = originalSnapshot.conflicts.find((item) => item.id === conflict.id);
+      return !existing || shouldWriteResolvedConflict(originalSnapshot.conflicts, conflict);
+    }) ?? [];
   const resolvedConflictsToWrite =
     resolvedConflicts?.filter((conflict) =>
       shouldWriteResolvedConflict(originalSnapshot.conflicts, conflict)
@@ -65,7 +75,7 @@ const buildWriteSet = (
     owners: [...owners.values()],
     visits: [...visits.values()],
     changesLog,
-    conflicts: [...newConflicts, ...resolvedConflictsToWrite]
+    conflicts: [...conflictsToWrite, ...resolvedConflictsToWrite]
   };
 };
 
@@ -79,27 +89,37 @@ function shouldWriteResolvedConflict(existingConflicts: Conflict[], incoming: Co
     return true;
   }
 
+  if (!existing.resolvedAt) {
+    return true;
+  }
+
   const incomingUpdatedAt = Date.parse(incoming.updatedAt);
   const existingUpdatedAt = Date.parse(existing.updatedAt);
 
   return incoming.version >= existing.version && incomingUpdatedAt >= existingUpdatedAt;
 }
 
-const hasConflictForChange = (
-  conflicts: ReturnType<typeof applyChangesToSnapshot>["conflicts"],
-  change: Change
-): boolean =>
-  conflicts.some(
-    (conflict) =>
-      conflict.entityName === change.entityName &&
-      conflict.entityId === change.entityId &&
-      conflict.baseVersion === change.baseVersion
-  );
-
 export async function POST(request: Request) {
   try {
     const payload = await parseJsonBody(request, pushRequestSchema);
-    const snapshot = await getSheetsSnapshot();
+    const sourceId = getConfiguredSheetSourceId();
+    if (payload.sourceId !== sourceId) {
+      return jsonError(
+        409,
+        "sync_source_mismatch",
+        "The spreadsheet source changed. Refresh the server data before syncing."
+      );
+    }
+    if (payload.changes.some((change) => change.sourceId !== sourceId)) {
+      return jsonError(
+        409,
+        "sync_change_source_mismatch",
+        "Some local changes belong to another spreadsheet. Refresh the server data before syncing."
+      );
+    }
+
+    const sheetsClient = await createGoogleSheetsValuesClient();
+    const snapshot = await readSheetsSnapshot(sheetsClient);
     const serverTime = new Date().toISOString();
     const applied = applyChangesToSnapshot(
       {
@@ -124,25 +144,20 @@ export async function POST(request: Request) {
     const writeSet = buildWriteSet(
       snapshot,
       nextSnapshot,
-      applied.appliedChanges,
+      payload.changes,
       applied.appliedChanges,
       applied.conflicts,
       payload.resolvedConflicts
     );
 
-    await writeSheetsChanges(snapshot, writeSet);
+    await writeSheetsChanges(snapshot, writeSet, sheetsClient);
     invalidateSheetsSnapshot();
 
-    const appliedIds = new Set(applied.acceptedChangeIds);
     const response = pushResponseSchema.parse({
+      sourceId,
       serverTime,
       applied: applied.acceptedChangeIds,
-      rejected: payload.changes
-        .filter((change) => !appliedIds.has(change.id))
-        .map((change) => ({
-          changeId: change.id,
-          reason: hasConflictForChange(applied.conflicts, change) ? "conflict" : "not_applied"
-        })),
+      rejected: applied.rejected,
       conflicts: applied.conflicts,
       points: writeSet.points,
       owners: writeSet.owners,

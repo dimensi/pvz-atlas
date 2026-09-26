@@ -72,6 +72,8 @@ async function getMatchingPendingChanges(
       (change) =>
         change.syncedAt === null &&
         change.deletedAt === null &&
+        Boolean(conflict.sourceId) &&
+        change.sourceId === conflict.sourceId &&
         changeKey(change) === key
     )
     .toArray();
@@ -194,7 +196,8 @@ export function mergePulledConflicts(
   const localById = new Map(localConflicts.map((conflict) => [conflict.id, conflict]));
 
   return pulledConflicts.map((pulledConflict) => {
-    const localConflict = localById.get(pulledConflict.id);
+    const candidate = localById.get(pulledConflict.id);
+    const localConflict = candidate?.sourceId === pulledConflict.sourceId ? candidate : undefined;
     if (
       localConflict?.resolvedAt &&
       !pulledConflict.resolvedAt &&
@@ -216,6 +219,8 @@ export function findEquivalentUnresolvedConflict(
       localConflict.id !== pulledConflict.id &&
       localConflict.deletedAt === null &&
       localConflict.resolvedAt === null &&
+      Boolean(localConflict.sourceId) &&
+      localConflict.sourceId === pulledConflict.sourceId &&
       conflictsHaveSameIdentity(localConflict, pulledConflict)
   );
 }

@@ -8,6 +8,10 @@ import { ListTodo, LogOut, Map, Plus, Users } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/lib/api/auth-api";
+import { SyncReviewBanner } from "@/components/sync/SyncReviewBanner";
+import { SyncOverviewProvider } from "@/components/sync/SyncOverviewProvider";
+import { SyncStatusPill } from "@/components/sync/SyncStatusPill";
+import { SyncReplacementNotice } from "@/components/sync/SyncReplacementNotice";
 
 const tabs = [
   { href: "/points", label: "Список", icon: ListTodo },
@@ -36,6 +40,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
+    <SyncOverviewProvider>
     <div className="app-shell">
       <header className="top-bar">
         <div className="brand-lockup">
@@ -54,15 +59,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
         <div className="top-bar-actions">
-          <div className="status-pill" aria-label="Статус приложения">
-            На устройстве
-          </div>
+          <SyncStatusPill />
           <Button aria-label="Выйти" onClick={handleLogout} size="icon-sm" type="button" variant="ghost">
             <LogOut />
           </Button>
         </div>
       </header>
-      <main className="main-content">{children}</main>
+      <main className="main-content">
+        <SyncReviewBanner />
+        <SyncReplacementNotice />
+        {children}
+      </main>
       <nav className="bottom-nav" aria-label="Основная навигация">
         {tabs.map((tab) => (
           <Link className="nav-tab" href={tab.href} key={tab.href}>
@@ -74,5 +81,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         ))}
       </nav>
     </div>
+    </SyncOverviewProvider>
   );
 }

@@ -20,6 +20,8 @@ export interface CreateChangeInput {
   patch: Record<string, unknown>;
   baseVersion: number;
   clientId: string;
+  sourceId?: string;
+  baseValues?: Record<string, unknown>;
 }
 
 export function createChangeRecord(
@@ -39,6 +41,8 @@ export function createChangeRecord(
     baseVersion: input.baseVersion,
     clientId: input.clientId,
     patch: input.patch,
+    ...(input.sourceId ? { sourceId: input.sourceId } : {}),
+    ...(input.baseValues ? { baseValues: input.baseValues } : {}),
     syncedAt: null,
     createdAt: now,
     updatedAt: now,
@@ -58,6 +62,15 @@ export function createEntityPatch<TEntity extends object>(
         !Object.is((current as Record<string, unknown>)[key], value)
     )
   ) as Partial<TEntity>;
+}
+
+export function baseValuesForPatch<TEntity extends object>(
+  current: TEntity,
+  patch: Partial<TEntity>
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.keys(patch).map((key) => [key, (current as Record<string, unknown>)[key]])
+  );
 }
 
 export function assertNonEmptyPatch(patch: Record<string, unknown>): void {

@@ -16,6 +16,7 @@ export const apiErrorBodySchema = z.object({
 });
 
 export const pullResponseSchema = z.object({
+  sourceId: z.string().min(1),
   serverTime: z.string().datetime(),
   points: z.array(pointSchema),
   owners: z.array(ownerSchema),
@@ -26,6 +27,7 @@ export const pullResponseSchema = z.object({
 
 export const pushRequestSchema = z.object({
   clientId: z.string().min(1),
+  sourceId: z.string().min(1),
   changes: z.array(changeSchema).max(500),
   resolvedConflicts: z.array(conflictSchema).max(500).optional()
 });
@@ -36,6 +38,7 @@ export const rejectedChangeSchema = z.object({
 });
 
 export const pushResponseSchema = z.object({
+  sourceId: z.string().min(1),
   serverTime: z.string().datetime(),
   applied: z.array(z.string()),
   rejected: z.array(rejectedChangeSchema),

@@ -29,7 +29,6 @@ import { DrawerShell } from "@/components/ui/drawer-shell";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { SyncHealthIndicator } from "@/components/sync/SyncHealthIndicator";
 import { OwnerPhoneInput } from "./OwnerPhoneInput";
 
 function normalize(value: string | null | undefined): string {
@@ -107,7 +106,6 @@ export default function OwnersClient() {
     error: cacheError,
     isOnline,
     isLoadingCache,
-    isRefreshing,
     refreshCache,
     refreshOnline
   } = useOnlineCachedSnapshot();
@@ -279,13 +277,6 @@ export default function OwnersClient() {
           <h2 className="page-title">Владельцы</h2>
           <p className="lead">Контакты и назначенные ПВЗ.</p>
         </div>
-        <SyncHealthIndicator
-          pendingChanges={state.pendingChanges}
-          conflicts={state.conflicts}
-          isOnline={isOnline}
-          isRefreshing={isRefreshing}
-          error={error}
-        />
       </section>
 
       <section className="owners-summary" aria-label="Сводка владельцев">

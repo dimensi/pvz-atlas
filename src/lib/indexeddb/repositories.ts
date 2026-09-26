@@ -5,12 +5,14 @@ import type { Change, Owner, Point, PointStatus, Visit } from "@/lib/data-model/
 import {
   applyEntityPatch,
   assertNonEmptyPatch,
+  baseValuesForPatch,
   createChangeRecord,
   createEntityPatch,
   markChangeRecordsApplied,
   type Clock,
   type IdFactory
 } from "@/lib/sync/changes";
+import { FIRST_OFFLINE_DRAFT_META_KEY, STAGED_SNAPSHOT_META_KEY, SYNC_SOURCE_META_KEY } from "@/lib/sync/meta";
 import { db, type PvzDatabase } from "./db";
 
 const defaultClock = (): string => new Date().toISOString();
@@ -76,12 +78,33 @@ function repositoryContext(options: RepositoryOptions = {}) {
   };
 }
 
+async function ensureCurrentSourceReady(database: PvzDatabase): Promise<void> {
+  if (await database.meta.get(STAGED_SNAPSHOT_META_KEY)) {
+    throw new Error("Сначала обновите данные из таблицы, затем повторите правку.");
+  }
+}
+
+async function markFirstOfflineDraftIfFresh(database: PvzDatabase, now: string): Promise<void> {
+  const [source, pull, points, owners, visits, changes] = await Promise.all([
+    database.meta.get(SYNC_SOURCE_META_KEY),
+    database.meta.get("lastPullServerTime"),
+    database.points.count(),
+    database.owners.count(),
+    database.visits.count(),
+    database.changes.count()
+  ]);
+  if (!source && !pull && points === 0 && owners === 0 && visits === 0 && changes === 0) {
+    await database.meta.put({ key: FIRST_OFFLINE_DRAFT_META_KEY, value: true, updatedAt: now });
+  }
+}
+
 function enqueueCreateChange<TEntity extends Point | Owner | Visit>(
   entityName: Change["entityName"],
   entity: TEntity,
   idFactory: IdFactory,
   clock: Clock,
-  clientId: string
+  clientId: string,
+  sourceId?: string
 ): Change {
   return createChangeRecord(
     {
@@ -90,6 +113,7 @@ function enqueueCreateChange<TEntity extends Point | Owner | Visit>(
       operation: "create",
       baseVersion: 0,
       clientId,
+      sourceId,
       patch: entity as unknown as Record<string, unknown>
     },
     { idFactory, clock }
@@ -102,8 +126,10 @@ export async function createPoint(
 ): Promise<Point> {
   const { database, clock, idFactory, clientId } = repositoryContext(options);
 
-  return database.transaction("rw", database.points, database.changes, async () => {
+  return database.transaction("rw", [database.points, database.owners, database.visits, database.changes, database.meta], async () => {
+    await ensureCurrentSourceReady(database);
     const now = clock();
+    await markFirstOfflineDraftIfFresh(database, now);
     const point: Point = {
       id: idFactory(),
       sourceKey: createPointSourceKey(input),
@@ -122,7 +148,11 @@ export async function createPoint(
       deletedAt: null,
       version: 1
     };
-    const change = enqueueCreateChange("point", point, idFactory, () => now, clientId);
+    const sourceId = (await database.meta.get(SYNC_SOURCE_META_KEY))?.value;
+    const change = enqueueCreateChange(
+      "point", point, idFactory, () => now, clientId,
+      typeof sourceId === "string" ? sourceId : undefined
+    );
 
     await database.points.add(point);
     await database.changes.add(change);
@@ -138,7 +168,8 @@ export async function updatePointPatch(
 ): Promise<Point> {
   const { database, clock, idFactory, clientId } = repositoryContext(options);
 
-  return database.transaction("rw", database.points, database.changes, async () => {
+  return database.transaction("rw", database.points, database.changes, database.meta, async () => {
+    await ensureCurrentSourceReady(database);
     const current = await database.points.get(pointId);
     if (!current || current.deletedAt) {
       throw new Error(`point ${pointId} was not found.`);
@@ -149,6 +180,7 @@ export async function updatePointPatch(
 
     const now = clock();
     const next = applyEntityPatch(current, changedPatch, now);
+    const sourceId = (await database.meta.get(SYNC_SOURCE_META_KEY))?.value;
     const change = createChangeRecord(
       {
         entityName: "point",
@@ -156,6 +188,8 @@ export async function updatePointPatch(
         operation: "update",
         baseVersion: current.version,
         clientId,
+        sourceId: typeof sourceId === "string" ? sourceId : undefined,
+        baseValues: baseValuesForPatch(current, changedPatch),
         patch: changedPatch as Record<string, unknown>
       },
       { idFactory, clock: () => now }
@@ -182,8 +216,10 @@ export async function createOwner(
 ): Promise<Owner> {
   const { database, clock, idFactory, clientId } = repositoryContext(options);
 
-  return database.transaction("rw", database.owners, database.changes, async () => {
+  return database.transaction("rw", [database.points, database.owners, database.visits, database.changes, database.meta], async () => {
+    await ensureCurrentSourceReady(database);
     const now = clock();
+    await markFirstOfflineDraftIfFresh(database, now);
     const owner: Owner = {
       id: idFactory(),
       name: input.name,
@@ -195,7 +231,11 @@ export async function createOwner(
       deletedAt: null,
       version: 1
     };
-    const change = enqueueCreateChange("owner", owner, idFactory, () => now, clientId);
+    const sourceId = (await database.meta.get(SYNC_SOURCE_META_KEY))?.value;
+    const change = enqueueCreateChange(
+      "owner", owner, idFactory, () => now, clientId,
+      typeof sourceId === "string" ? sourceId : undefined
+    );
 
     await database.owners.add(owner);
     await database.changes.add(change);
@@ -211,7 +251,8 @@ export async function updateOwnerPatch(
 ): Promise<Owner> {
   const { database, clock, idFactory, clientId } = repositoryContext(options);
 
-  return database.transaction("rw", database.owners, database.changes, async () => {
+  return database.transaction("rw", database.owners, database.changes, database.meta, async () => {
+    await ensureCurrentSourceReady(database);
     const current = await database.owners.get(ownerId);
     if (!current || current.deletedAt) {
       throw new Error(`owner ${ownerId} was not found.`);
@@ -222,6 +263,7 @@ export async function updateOwnerPatch(
 
     const now = clock();
     const next = applyEntityPatch(current, changedPatch, now);
+    const sourceId = (await database.meta.get(SYNC_SOURCE_META_KEY))?.value;
     const change = createChangeRecord(
       {
         entityName: "owner",
@@ -229,6 +271,8 @@ export async function updateOwnerPatch(
         operation: "update",
         baseVersion: current.version,
         clientId,
+        sourceId: typeof sourceId === "string" ? sourceId : undefined,
+        baseValues: baseValuesForPatch(current, changedPatch),
         patch: changedPatch as Record<string, unknown>
       },
       { idFactory, clock: () => now }
@@ -247,7 +291,8 @@ export async function markPointVisited(
 ): Promise<Visit> {
   const { database, clock, idFactory, clientId } = repositoryContext(options);
 
-  return database.transaction("rw", database.points, database.visits, database.changes, async () => {
+  return database.transaction("rw", database.points, database.visits, database.changes, database.meta, async () => {
+    await ensureCurrentSourceReady(database);
     const point = await database.points.get(input.pointId);
     if (!point || point.deletedAt) {
       throw new Error(`point ${input.pointId} was not found.`);
@@ -265,7 +310,11 @@ export async function markPointVisited(
       deletedAt: null,
       version: 1
     };
-    const change = enqueueCreateChange("visit", visit, idFactory, () => now, clientId);
+    const sourceId = (await database.meta.get(SYNC_SOURCE_META_KEY))?.value;
+    const change = enqueueCreateChange(
+      "visit", visit, idFactory, () => now, clientId,
+      typeof sourceId === "string" ? sourceId : undefined
+    );
 
     await database.visits.add(visit);
     await database.changes.add(change);
@@ -281,7 +330,8 @@ export async function updateVisitPatch(
 ): Promise<Visit> {
   const { database, clock, idFactory, clientId } = repositoryContext(options);
 
-  return database.transaction("rw", database.visits, database.changes, async () => {
+  return database.transaction("rw", database.visits, database.changes, database.meta, async () => {
+    await ensureCurrentSourceReady(database);
     const current = await database.visits.get(visitId);
     if (!current || current.deletedAt) {
       throw new Error(`visit ${visitId} was not found.`);
@@ -292,6 +342,7 @@ export async function updateVisitPatch(
 
     const now = clock();
     const next = applyEntityPatch(current, changedPatch, now);
+    const sourceId = (await database.meta.get(SYNC_SOURCE_META_KEY))?.value;
     const change = createChangeRecord(
       {
         entityName: "visit",
@@ -299,6 +350,8 @@ export async function updateVisitPatch(
         operation: "update",
         baseVersion: current.version,
         clientId,
+        sourceId: typeof sourceId === "string" ? sourceId : undefined,
+        baseValues: baseValuesForPatch(current, changedPatch),
         patch: changedPatch as Record<string, unknown>
       },
       { idFactory, clock: () => now }

@@ -1,46 +1,42 @@
 import { describe, expect, it, vi } from "vitest";
 import type { Change, Conflict, Point } from "@/lib/data-model/types";
-import type { PvzDatabase } from "@/lib/indexeddb/db";
+import type { MetaEntry, PvzDatabase } from "@/lib/indexeddb/db";
 import type { PullResponse, PushResponse } from "@/lib/api/types";
-import { LAST_PULL_META_KEY, refreshOnlineCache, runSync } from "./engine";
+import { ApiError } from "@/lib/api/client";
+import { runSync } from "./engine";
+import { CACHE_REPLACEMENT_NOTICE_META_KEY, FIRST_OFFLINE_DRAFT_META_KEY, HELD_RECORDS_BACKUP_META_KEY, PREVIOUS_DATA_BACKUPS_META_KEY, STAGED_SNAPSHOT_META_KEY, SYNC_SOURCE_META_KEY } from "./meta";
 
 const now = "2026-01-02T03:04:05.000Z";
-const pushedAt = "2026-01-02T03:05:00.000Z";
-const finalTime = "2026-01-02T03:06:00.000Z";
+const later = "2026-01-02T03:05:00.000Z";
 
 class FakeTable<TItem extends object> {
   items: TItem[];
-  private key: keyof TItem;
-
-  constructor(key: keyof TItem, items: TItem[] = []) {
-    this.key = key;
+  constructor(private key: keyof TItem, items: TItem[] = []) {
     this.items = [...items];
   }
-
-  async bulkPut(items: TItem[]): Promise<void> {
-    for (const item of items) {
-      await this.put(item);
-    }
-  }
-
-  async bulkGet(keys: string[]): Promise<Array<TItem | undefined>> {
-    return keys.map((key) => this.items.find((item) => item[this.key] === key));
-  }
-
-  async put(item: TItem): Promise<void> {
-    const index = this.items.findIndex((existing) => existing[this.key] === item[this.key]);
-    if (index === -1) {
-      this.items.push(item);
-      return;
-    }
-
-    this.items[index] = item;
-  }
-
   async get(key: string): Promise<TItem | undefined> {
     return this.items.find((item) => item[this.key] === key);
   }
-
+  async put(item: TItem): Promise<void> {
+    const index = this.items.findIndex((existing) => existing[this.key] === item[this.key]);
+    if (index < 0) this.items.push(item);
+    else this.items[index] = item;
+  }
+  async bulkPut(items: TItem[]): Promise<void> {
+    for (const item of items) await this.put(item);
+  }
+  async bulkGet(keys: string[]): Promise<Array<TItem | undefined>> {
+    return Promise.all(keys.map((key) => this.get(key)));
+  }
+  async bulkDelete(keys: string[]): Promise<void> {
+    this.items = this.items.filter((item) => !keys.includes(String(item[this.key])));
+  }
+  async delete(key: string): Promise<void> {
+    await this.bulkDelete([key]);
+  }
+  async toArray(): Promise<TItem[]> {
+    return [...this.items];
+  }
   filter(predicate: (item: TItem) => boolean) {
     return {
       toArray: async () => this.items.filter(predicate),
@@ -49,473 +45,334 @@ class FakeTable<TItem extends object> {
   }
 }
 
-function createDatabase(options: {
-  changes?: Change[];
-  conflicts?: Conflict[];
-  points?: Point[];
-} = {}): PvzDatabase {
+function point(id: string, overrides: Partial<Point> = {}): Point {
   return {
-    points: new FakeTable<Point>("id", options.points ?? []),
+    id,
+    sourceKey: `ozon|moscow|${id}`,
+    brand: "Ozon",
+    city: "Москва",
+    address: id,
+    normalizedCity: "москва",
+    normalizedAddress: id,
+    ownerId: null,
+    status: "new",
+    lat: null,
+    lon: null,
+    comment: null,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+    version: 1,
+    ...overrides
+  };
+}
+
+function change(id: string, entityId: string, overrides: Partial<Change> = {}): Change {
+  return {
+    id,
+    entityName: "point",
+    entityId,
+    operation: "update",
+    baseVersion: 1,
+    clientId: "phone",
+    sourceId: "source-A",
+    baseValues: { comment: null },
+    patch: { comment: "локально" },
+    syncedAt: null,
+    createdAt: now,
+    updatedAt: now,
+    deletedAt: null,
+    version: 1,
+    ...overrides
+  };
+}
+
+function pull(sourceId: string, points: Point[], conflicts: Conflict[] = []): PullResponse {
+  return { sourceId, serverTime: later, points, owners: [], visits: [], conflicts };
+}
+
+function database(input: { points?: Point[]; changes?: Change[]; sourceId?: string; freshDraft?: boolean } = {}) {
+  const meta: MetaEntry[] = input.sourceId
+    ? [{ key: SYNC_SOURCE_META_KEY, value: input.sourceId, updatedAt: now }]
+    : [];
+  if (input.freshDraft) meta.push({ key: FIRST_OFFLINE_DRAFT_META_KEY, value: true, updatedAt: now });
+  return {
+    points: new FakeTable("id", input.points ?? []),
     owners: new FakeTable("id"),
     visits: new FakeTable("id"),
-    conflicts: new FakeTable<Conflict>("id", options.conflicts ?? []),
-    changes: new FakeTable<Change>("id", options.changes ?? []),
-    meta: new FakeTable("key"),
+    changes: new FakeTable("id", input.changes ?? []),
+    conflicts: new FakeTable("id"),
+    meta: new FakeTable<MetaEntry>("key", meta),
     transaction: async (...args: unknown[]) => {
       const callback = args.at(-1);
-      if (typeof callback !== "function") {
-        throw new Error("transaction callback missing");
-      }
+      if (typeof callback !== "function") throw new Error("missing transaction callback");
       return callback();
     }
   } as unknown as PvzDatabase;
 }
 
-const point: Point = {
-  id: "point-1",
-  sourceKey: "ozon|moscow|main-1",
-  brand: "Ozon",
-  city: "Moscow",
-  address: "Main 1",
-  normalizedCity: "moscow",
-  normalizedAddress: "main 1",
-  ownerId: null,
-  status: "new",
-  lat: null,
-  lon: null,
-  comment: null,
-  createdAt: now,
-  updatedAt: now,
-  deletedAt: null,
-  version: 1
-};
+function table<T extends object>(value: unknown): FakeTable<T> {
+  return value as FakeTable<T>;
+}
 
-const change: Change = {
-  id: "change-1",
-  entityName: "point",
-  entityId: "point-1",
-  operation: "update",
-  baseVersion: 1,
-  clientId: "client-1",
-  patch: { ownerId: "owner-1" },
-  syncedAt: null,
-  createdAt: now,
-  updatedAt: now,
-  deletedAt: null,
-  version: 1
-};
-
-describe("runSync", () => {
-  it("pulls, applies remote data, pushes queued changes through API clients, and pulls again", async () => {
-    const database = createDatabase({ changes: [change] });
-    const firstPull: PullResponse = {
-      serverTime: now,
-      points: [point],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
-    const pushResponse: PushResponse = {
-      serverTime: pushedAt,
-      applied: ["change-1"],
-      rejected: [],
-      conflicts: [],
-      points: [{ ...point, ownerId: "owner-1", version: 2, updatedAt: pushedAt }]
-    };
-    const finalPull: PullResponse = {
-      serverTime: finalTime,
-      points: [],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
+describe("server-authoritative sync", () => {
+  it("loads a complete snapshot into an empty cache", async () => {
+    const local = database();
+    const remote = pull("source-A", [point("one"), point("two")]);
     const api = {
-      pullSync: vi.fn().mockResolvedValueOnce(firstPull).mockResolvedValueOnce(finalPull),
-      pushSync: vi.fn().mockResolvedValue(pushResponse)
-    };
-
-    const result = await runSync({ database, api, clientId: "client-1", since: null });
-
-    expect(api.pullSync).toHaveBeenNthCalledWith(1, null);
-    expect(api.pushSync).toHaveBeenCalledWith({ clientId: "client-1", changes: [change] });
-    expect(api.pullSync).toHaveBeenNthCalledWith(2, null);
-    expect(result.pendingChangeCount).toBe(1);
-    expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
-      id: "point-1",
-      ownerId: "owner-1"
-    });
-    expect((database.changes as unknown as FakeTable<Change>).items[0]).toMatchObject({
-      id: "change-1",
-      syncedAt: pushedAt,
-      version: 2
-    });
-  });
-
-  it("preserves locally dirty entities while applying pulls", async () => {
-    const localDirtyPoint = {
-      ...point,
-      ownerId: "owner-local",
-      version: 2,
-      updatedAt: "2026-01-02T03:04:30.000Z"
-    };
-    const remotePoint = { ...point, ownerId: null, version: 1 };
-    const database = createDatabase({
-      changes: [change],
-      points: [localDirtyPoint]
-    });
-    const firstPull: PullResponse = {
-      serverTime: now,
-      points: [remotePoint],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
-    const pushResponse: PushResponse = {
-      serverTime: pushedAt,
-      applied: ["change-1"],
-      rejected: [],
-      conflicts: [],
-      points: [{ ...localDirtyPoint, version: 3, updatedAt: pushedAt }]
-    };
-    const finalPull: PullResponse = {
-      serverTime: finalTime,
-      points: [{ ...localDirtyPoint, version: 3, updatedAt: pushedAt }],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
-    const api = {
-      pullSync: vi.fn().mockResolvedValueOnce(firstPull).mockResolvedValueOnce(finalPull),
-      pushSync: vi.fn().mockImplementation(async () => {
-        expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
-          id: "point-1",
-          ownerId: "owner-local",
-          version: 2
-        });
-        return pushResponse;
-      })
-    };
-
-    await runSync({ database, api, clientId: "client-1", since: null });
-
-    expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
-      id: "point-1",
-      ownerId: "owner-local",
-      version: 3
-    });
-  });
-
-  it("does not overwrite an entity when push response leaves another local change pending", async () => {
-    const commentChange: Change = {
-      ...change,
-      id: "change-2",
-      patch: { comment: "local note" },
-      createdAt: "2026-01-02T03:04:06.000Z",
-      updatedAt: "2026-01-02T03:04:06.000Z"
-    };
-    const localDirtyPoint = {
-      ...point,
-      ownerId: "owner-1",
-      comment: "local note",
-      version: 3,
-      updatedAt: "2026-01-02T03:04:30.000Z"
-    };
-    const database = createDatabase({
-      changes: [change, commentChange],
-      points: [localDirtyPoint]
-    });
-    const firstPull: PullResponse = {
-      serverTime: now,
-      points: [],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
-    const pushResponse: PushResponse = {
-      serverTime: pushedAt,
-      applied: ["change-1"],
-      rejected: [{ changeId: "change-2", reason: "conflict" }],
-      conflicts: [],
-      points: [{ ...point, ownerId: "owner-1", comment: null, version: 2, updatedAt: pushedAt }]
-    };
-    const finalPull: PullResponse = {
-      serverTime: finalTime,
-      points: [{ ...point, ownerId: "owner-1", comment: null, version: 2, updatedAt: pushedAt }],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
-    const api = {
-      pullSync: vi.fn().mockResolvedValueOnce(firstPull).mockResolvedValueOnce(finalPull),
-      pushSync: vi.fn().mockResolvedValue(pushResponse)
-    };
-
-    await runSync({ database, api, clientId: "client-1", since: null });
-
-    expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
-      id: "point-1",
-      ownerId: "owner-1",
-      comment: "local note"
-    });
-    expect((database.changes as unknown as FakeTable<Change>).items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({ id: "change-1", syncedAt: pushedAt }),
-        expect.objectContaining({ id: "change-2", syncedAt: null })
-      ])
-    );
-  });
-
-  it("does not push pending changes that already have unresolved conflicts", async () => {
-    const conflict: Conflict = {
-      id: "conflict-1",
-      entityName: "point",
-      entityId: "point-1",
-      field: "ownerId",
-      localValue: "owner-1",
-      remoteValue: "owner-2",
-      baseVersion: 1,
-      remoteVersion: 2,
-      resolvedAt: null,
-      resolution: null,
-      createdAt: pushedAt,
-      updatedAt: pushedAt,
-      deletedAt: null,
-      version: 1
-    };
-    const database = createDatabase({
-      changes: [change],
-      conflicts: [conflict],
-      points: [{ ...point, ownerId: "owner-1" }]
-    });
-    const emptyPull: PullResponse = {
-      serverTime: now,
-      points: [{ ...point, ownerId: "owner-2", version: 2 }],
-      owners: [],
-      visits: [],
-      conflicts: [conflict]
-    };
-    const api = {
-      pullSync: vi.fn().mockResolvedValue(emptyPull),
+      pullSync: vi.fn().mockResolvedValue(remote),
       pushSync: vi.fn()
     };
 
-    const result = await runSync({ database, api, clientId: "client-1", since: null });
+    const result = await runSync({ database: local, api });
 
-    expect(api.pushSync).not.toHaveBeenCalled();
-    expect(result.pushed).toBeNull();
-    expect((database.changes as unknown as FakeTable<Change>).items[0]).toMatchObject({
-      id: "change-1",
-      syncedAt: null
-    });
-    expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
-      id: "point-1",
-      ownerId: "owner-1"
-    });
-  });
-
-  it("pushes locally resolved conflicts even when no entity changes remain", async () => {
-    const resolvedConflict: Conflict = {
-      id: "conflict-1",
-      entityName: "point",
-      entityId: "point-1",
-      field: "ownerId",
-      localValue: "owner-1",
-      remoteValue: "owner-2",
-      baseVersion: 1,
-      remoteVersion: 2,
-      resolvedAt: pushedAt,
-      resolution: "remote",
-      createdAt: now,
-      updatedAt: pushedAt,
-      deletedAt: null,
-      version: 2
-    };
-    const database = createDatabase({
-      conflicts: [resolvedConflict]
-    });
-    const firstPull: PullResponse = {
-      serverTime: now,
-      points: [],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
-    const pushResponse: PushResponse = {
-      serverTime: pushedAt,
-      applied: [],
-      rejected: [],
-      conflicts: []
-    };
-    const finalPull: PullResponse = {
-      serverTime: finalTime,
-      points: [],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
-    const api = {
-      pullSync: vi.fn().mockResolvedValueOnce(firstPull).mockResolvedValueOnce(finalPull),
-      pushSync: vi.fn().mockResolvedValue(pushResponse)
-    };
-
-    const result = await runSync({ database, api, clientId: "client-1", since: null });
-
-    expect(api.pushSync).toHaveBeenCalledWith({
-      clientId: "client-1",
-      changes: [],
-      resolvedConflicts: [resolvedConflict]
-    });
-    expect(result.pendingChangeCount).toBe(0);
-  });
-
-  it("applies a pulled resolved duplicate conflict to local pending state", async () => {
-    const localConflict: Conflict = {
-      id: "local-conflict",
-      entityName: "point",
-      entityId: "point-1",
-      field: "ownerId",
-      localValue: "owner-1",
-      remoteValue: "owner-2",
-      baseVersion: 1,
-      remoteVersion: 2,
-      resolvedAt: null,
-      resolution: null,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-      version: 1
-    };
-    const pulledResolvedConflict: Conflict = {
-      ...localConflict,
-      id: "remote-conflict",
-      resolvedAt: pushedAt,
-      resolution: "remote",
-      updatedAt: pushedAt,
-      version: 2
-    };
-    const database = createDatabase({
-      changes: [change],
-      conflicts: [localConflict],
-      points: [{ ...point, ownerId: "owner-1", version: 2 }]
-    });
-    const firstPull: PullResponse = {
-      serverTime: now,
-      points: [{ ...point, ownerId: "owner-2", version: 2 }],
-      owners: [],
-      visits: [],
-      conflicts: [pulledResolvedConflict]
-    };
-    const pushResponse: PushResponse = {
-      serverTime: pushedAt,
-      applied: [],
-      rejected: [],
-      conflicts: []
-    };
-    const finalPull: PullResponse = {
-      serverTime: finalTime,
-      points: [],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
-    const api = {
-      pullSync: vi.fn().mockResolvedValueOnce(firstPull).mockResolvedValueOnce(finalPull),
-      pushSync: vi.fn().mockResolvedValue(pushResponse)
-    };
-
-    await runSync({ database, api, clientId: "client-1", since: null });
-
-    expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
-      id: "point-1",
-      ownerId: "owner-2",
-      version: 2
-    });
-    expect((database.changes as unknown as FakeTable<Change>).items[0]).toMatchObject({
-      id: "change-1",
-      syncedAt: pushedAt
-    });
-    expect((database.conflicts as unknown as FakeTable<Conflict>).items).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          id: "local-conflict",
-          resolvedAt: pushedAt,
-          resolution: "remote"
-        }),
-        expect.objectContaining({
-          id: "remote-conflict",
-          resolvedAt: pushedAt,
-          resolution: "remote"
-        })
-      ])
-    );
-  });
-});
-
-describe("refreshOnlineCache", () => {
-  it("pulls only when there are no pushable local changes", async () => {
-    const database = createDatabase();
-    const pulledPoint = { ...point, id: "remote-point", address: "Remote 1" };
-    const pullResponse: PullResponse = {
-      serverTime: finalTime,
-      points: [pulledPoint],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
-    const api = {
-      pullSync: vi.fn().mockResolvedValue(pullResponse),
-      pushSync: vi.fn()
-    };
-
-    const result = await refreshOnlineCache({ database, api, since: null });
-
-    expect(result).toMatchObject({ mode: "pull", pulled: pullResponse, synced: null });
-    expect(api.pullSync).toHaveBeenCalledOnce();
+    expect(result.reviewRequired).toBe(false);
     expect(api.pullSync).toHaveBeenCalledWith(null);
     expect(api.pushSync).not.toHaveBeenCalled();
-    expect((database.points as unknown as FakeTable<Point>).items[0]).toMatchObject({
-      id: "remote-point",
-      address: "Remote 1"
+    expect(table<Point>(local.points).items.map((item) => item.id)).toEqual(["one", "two"]);
+    expect((await local.meta.get(SYNC_SOURCE_META_KEY))?.value).toBe("source-A");
+  });
+
+  it("replaces stale rows automatically when the table has fewer records", async () => {
+    const local = database({
+      sourceId: "source-A",
+      points: [point("one"), point("two"), point("three")]
     });
-    expect(await database.meta.get(LAST_PULL_META_KEY)).toMatchObject({
-      key: LAST_PULL_META_KEY,
-      value: finalTime
+    const remote = pull("source-A", [point("one")]);
+    const api = { pullSync: vi.fn().mockResolvedValue(remote), pushSync: vi.fn() };
+
+    const first = await runSync({ database: local, api });
+    expect(first.reviewRequired).toBe(false);
+    expect(api.pushSync).not.toHaveBeenCalled();
+    expect(table<Point>(local.points).items.map((item) => item.id)).toEqual(["one"]);
+    expect((await local.meta.get(CACHE_REPLACEMENT_NOTICE_META_KEY))?.value).toMatchObject({
+      kind: "records-removed", beforePoints: 3, afterPoints: 1
+    });
+    expect(await local.meta.get(STAGED_SNAPSHOT_META_KEY)).toBeUndefined();
+  });
+
+  it("keeps edits to a remotely removed point without showing the stale point", async () => {
+    const local = database({
+      sourceId: "source-A",
+      points: [point("removed", { comment: "локально" })],
+      changes: [change("change-removed", "removed")]
+    });
+    const api = {
+      pullSync: vi.fn().mockResolvedValue(pull("source-A", [])),
+      pushSync: vi.fn()
+    };
+
+    await runSync({ database: local, api });
+
+    expect(table<Point>(local.points).items).toEqual([]);
+    expect(table<Change>(local.changes).items[0]).toMatchObject({
+      id: "change-removed", sourceId: "held:source-A", syncedAt: null
+    });
+    expect((await local.meta.get(HELD_RECORDS_BACKUP_META_KEY))?.value).toMatchObject([
+      { entityId: "removed", record: expect.objectContaining({ comment: "локально" }) }
+    ]);
+    expect(api.pushSync).not.toHaveBeenCalled();
+  });
+
+  it("does not send old-source changes to a new spreadsheet", async () => {
+    const oldChange = change("change-one", "one");
+    const local = database({
+      sourceId: "source-A",
+      points: [point("one", { comment: "локально" })],
+      changes: [oldChange]
+    });
+    const remote = pull("source-B", [point("new")]);
+    const api = { pullSync: vi.fn().mockResolvedValue(remote), pushSync: vi.fn() };
+
+    expect((await runSync({ database: local, api })).reviewRequired).toBe(false);
+    expect(api.pushSync).not.toHaveBeenCalled();
+    expect(table<Point>(local.points).items.map((item) => item.id)).toEqual(["new"]);
+    expect((await local.meta.get(CACHE_REPLACEMENT_NOTICE_META_KEY))?.value).toMatchObject({
+      kind: "source-changed", beforePoints: 1, afterPoints: 1
+    });
+    expect(table<Change>(local.changes).items[0]).toMatchObject({
+      id: "change-one", sourceId: "source-A", syncedAt: null
+    });
+    expect((await runSync({ database: local, api })).reviewRequired).toBe(false);
+    expect(api.pushSync).not.toHaveBeenCalled();
+  });
+
+  it("switches to the new source when it changes between pull and push", async () => {
+    const local = database({
+      sourceId: "source-A",
+      points: [point("one", { comment: "локально" })],
+      changes: [change("change-one", "one")]
+    });
+    const api = {
+      pullSync: vi.fn().mockResolvedValueOnce(pull("source-A", [point("one")]))
+        .mockResolvedValueOnce(pull("source-B", [point("new")]))
+        .mockResolvedValueOnce(pull("source-B", [point("new")])),
+      pushSync: vi.fn().mockRejectedValue(new ApiError({
+        status: 409, code: "sync_source_mismatch", message: "source changed"
+      }))
+    };
+
+    const result = await runSync({ database: local, api });
+    expect(result.reviewRequired).toBe(false);
+    expect(table<Point>(local.points).items.map((item) => item.id)).toEqual(["new"]);
+    expect(table<Change>(local.changes).items[0]).toMatchObject({
+      id: "change-one", sourceId: "source-A", syncedAt: null
     });
   });
 
-  it("runs full sync when pushable local changes exist", async () => {
-    const database = createDatabase({ changes: [change] });
-    const firstPull: PullResponse = {
-      serverTime: now,
-      points: [point],
-      owners: [],
-      visits: [],
-      conflicts: []
-    };
-    const pushResponse: PushResponse = {
-      serverTime: pushedAt,
-      applied: ["change-1"],
-      rejected: [],
-      conflicts: [],
-      points: [{ ...point, ownerId: "owner-1", version: 2, updatedAt: pushedAt }]
-    };
-    const finalPull: PullResponse = {
-      serverTime: finalTime,
-      points: [],
-      owners: [],
-      visits: [],
-      conflicts: []
+  it("archives a successful old-source push before a final pull switches spreadsheets", async () => {
+    const localChange = change("change-one", "one");
+    const local = database({
+      sourceId: "source-A",
+      points: [point("one", { comment: "локально" })],
+      changes: [localChange]
+    });
+    const pushed: PushResponse = {
+      sourceId: "source-A", serverTime: later, applied: [localChange.id],
+      rejected: [], conflicts: [], points: [point("one", { comment: "локально", version: 2 })]
     };
     const api = {
-      pullSync: vi.fn().mockResolvedValueOnce(firstPull).mockResolvedValueOnce(finalPull),
-      pushSync: vi.fn().mockResolvedValue(pushResponse)
+      pullSync: vi.fn().mockResolvedValueOnce(pull("source-A", [point("one")]))
+        .mockResolvedValueOnce(pull("source-B", [point("new")])),
+      pushSync: vi.fn().mockResolvedValue(pushed)
     };
 
-    const result = await refreshOnlineCache({ database, api, clientId: "client-1", since: null });
+    await runSync({ database: local, api });
 
-    expect(result.mode).toBe("sync");
-    expect(result.synced?.pendingChangeCount).toBe(1);
-    expect(api.pullSync).toHaveBeenCalledTimes(2);
-    expect(api.pushSync).toHaveBeenCalledWith({ clientId: "client-1", changes: [change] });
+    expect(table<Change>(local.changes).items[0].syncedAt).toBe(later);
+    expect(table<Point>(local.points).items.map((item) => item.id)).toEqual(["new"]);
+    expect((await local.meta.get(PREVIOUS_DATA_BACKUPS_META_KEY))?.value).toMatchObject([{
+      sourceId: "source-A",
+      points: [expect.objectContaining({ id: "one", comment: "локально" })]
+    }]);
+  });
+
+  it("does not bind edits from an older cache to an unidentified source", async () => {
+    const unbound = change("old-change", "one", { sourceId: undefined });
+    const local = database({
+      points: [point("one", { comment: "локально" })],
+      changes: [unbound]
+    });
+    const remote = pull("source-A", [point("one")]);
+    const api = { pullSync: vi.fn().mockResolvedValue(remote), pushSync: vi.fn() };
+
+    expect((await runSync({ database: local, api })).reviewRequired).toBe(false);
+    expect(api.pushSync).not.toHaveBeenCalled();
+    expect(table<Point>(local.points).items[0].comment).toBeNull();
+    expect(table<Change>(local.changes).items[0].syncedAt).toBeNull();
+    expect((await local.meta.get(PREVIOUS_DATA_BACKUPS_META_KEY))?.value).toMatchObject([{
+      points: [expect.objectContaining({ id: "one", comment: "локально" })]
+    }]);
+    expect((await runSync({ database: local, api })).reviewRequired).toBe(false);
+    expect(api.pushSync).not.toHaveBeenCalled();
+  });
+
+  it("does not mistake an offline creation for a remote deletion", async () => {
+    const created = point("offline");
+    const localChange = change("create-one", "offline", {
+      operation: "create",
+      baseVersion: 0,
+      baseValues: undefined,
+      patch: { ...created }
+    });
+    const local = database({ sourceId: "source-A", points: [created], changes: [localChange] });
+    const remote = pull("source-A", []);
+    const pushed: PushResponse = {
+      sourceId: "source-A", serverTime: later, applied: ["create-one"], rejected: [],
+      conflicts: [], points: [point("offline", { version: 2 })]
+    };
+    const api = {
+      pullSync: vi.fn().mockResolvedValueOnce(remote).mockResolvedValueOnce(pull("source-A", pushed.points ?? [])),
+      pushSync: vi.fn().mockResolvedValue(pushed)
+    };
+
+    const result = await runSync({ database: local, api });
+    expect(result.reviewRequired).toBe(false);
+    expect(api.pushSync).toHaveBeenCalledWith({
+      clientId: "local", sourceId: "source-A", changes: [localChange]
+    });
+    expect(table<Change>(local.changes).items[0].syncedAt).toBe(later);
+  });
+
+  it("sends a point created before the first ever online connection", async () => {
+    const created = point("first-offline");
+    const localChange = change("first-create", created.id, {
+      operation: "create", baseVersion: 0, sourceId: undefined,
+      baseValues: undefined, patch: { ...created }
+    });
+    const local = database({ points: [created], changes: [localChange], freshDraft: true });
+    const pushed: PushResponse = {
+      sourceId: "source-A", serverTime: later, applied: [localChange.id],
+      rejected: [], conflicts: [], points: [created]
+    };
+    const api = {
+      pullSync: vi.fn().mockResolvedValueOnce(pull("source-A", []))
+        .mockResolvedValueOnce(pull("source-A", [created])),
+      pushSync: vi.fn().mockResolvedValue(pushed)
+    };
+
+    expect((await runSync({ database: local, api })).reviewRequired).toBe(false);
+    expect(api.pushSync).toHaveBeenCalledWith(expect.objectContaining({
+      sourceId: "source-A",
+      changes: [expect.objectContaining({ id: localChange.id, sourceId: "source-A" })]
+    }));
+    expect(table<Point>(local.points).items).toHaveLength(1);
+    expect(table<Change>(local.changes).items[0].syncedAt).toBe(later);
+  });
+
+  it("does not bind an unmarked old creation to a newly configured spreadsheet", async () => {
+    const created = point("old-offline");
+    const localChange = change("old-create", created.id, {
+      operation: "create", baseVersion: 0, sourceId: undefined,
+      baseValues: undefined, patch: { ...created }
+    });
+    const local = database({ points: [created], changes: [localChange] });
+    const api = {
+      pullSync: vi.fn().mockResolvedValue(pull("source-B", [])),
+      pushSync: vi.fn()
+    };
+
+    await runSync({ database: local, api });
+
+    expect(api.pushSync).not.toHaveBeenCalled();
+    expect(table<Point>(local.points).items).toEqual([]);
+    expect(table<Change>(local.changes).items[0]).toMatchObject({
+      id: "old-create", sourceId: undefined, syncedAt: null
+    });
+    expect((await local.meta.get(HELD_RECORDS_BACKUP_META_KEY))?.value).toMatchObject([
+      { entityId: created.id, record: expect.objectContaining({ id: created.id }) }
+    ]);
+  });
+
+  it("keeps the table value and records a notice when both sides edit one field", async () => {
+    const remotePoint = point("one", { comment: "в таблице", version: 2 });
+    const local = database({
+      sourceId: "source-A",
+      points: [point("one", { comment: "локально", version: 2 })],
+      changes: [change("change-one", "one")]
+    });
+    const notice: Conflict = {
+      id: "notice-one", entityName: "point", entityId: "one", field: "comment",
+      baseVersion: 1, remoteVersion: 2, localValue: "локально", remoteValue: "в таблице",
+      resolvedAt: later, resolution: "remote", createdAt: later, updatedAt: later,
+      deletedAt: null, version: 1
+    };
+    const pushed: PushResponse = {
+      sourceId: "source-A", serverTime: later, applied: [],
+      rejected: [{ changeId: "change-one", reason: "conflict" }],
+      conflicts: [notice], points: [remotePoint]
+    };
+    const api = {
+      pullSync: vi.fn().mockResolvedValueOnce(pull("source-A", [remotePoint]))
+        .mockResolvedValueOnce(pull("source-A", [remotePoint])),
+      pushSync: vi.fn().mockResolvedValue(pushed)
+    };
+
+    await runSync({ database: local, api });
+    expect(table<Point>(local.points).items[0].comment).toBe("в таблице");
+    expect(table<Change>(local.changes).items[0].syncedAt).toBe(later);
+    expect(table<Conflict>(local.conflicts).items[0]).toMatchObject({
+      field: "comment", resolution: "remote", localNotice: true
+    });
   });
 });

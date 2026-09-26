@@ -47,10 +47,14 @@ export interface Change extends SyncEntity {
   baseVersion: number;
   clientId: string;
   patch: Record<string, unknown>;
+  sourceId?: string;
+  baseValues?: Record<string, unknown>;
   syncedAt: string | null;
 }
 
 export interface Conflict extends SyncEntity {
+  sourceId?: string;
+  localNotice?: boolean;
   entityName: Exclude<SyncEntityName, "change" | "conflict">;
   entityId: string;
   field: string;

@@ -18,7 +18,6 @@ import {
   type PointAction,
   type PointActionItem
 } from "@/components/points/PointActionDialogs";
-import { SyncHealthIndicator } from "@/components/sync/SyncHealthIndicator";
 import {
   createMapPointItems,
   filterMapMarkers,
@@ -199,13 +198,6 @@ export default function LeafletMapClient() {
           <h2 className="page-title">Карта</h2>
           <p className="lead">Маркеры строятся из координат, сохраненных на устройстве.</p>
         </div>
-        <SyncHealthIndicator
-          pendingChanges={state.pendingChanges}
-          conflicts={state.conflicts}
-          isOnline={isOnline}
-          isRefreshing={isRefreshing}
-          error={error}
-        />
       </section>
 
       <section className="list-controls" aria-label="Фильтры карты">

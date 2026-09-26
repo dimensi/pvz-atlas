@@ -3,13 +3,14 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PvzDatabase } from "@/lib/indexeddb/db";
 import type { SyncApiClient } from "./engine";
-import { refreshOnlineCache } from "./engine";
+import { acceptStagedSnapshot, refreshOnlineCache } from "./engine";
 import {
   hasCachedSnapshotData,
   readCachedSnapshot,
   type CachedSnapshot,
   type OnlineCacheStatus
 } from "./cache";
+import { syncErrorMessage } from "./user-error";
 
 const EMPTY_SNAPSHOT: CachedSnapshot = {
   points: [],
@@ -17,7 +18,10 @@ const EMPTY_SNAPSHOT: CachedSnapshot = {
   visits: [],
   pendingChanges: [],
   conflicts: [],
-  lastPullServerTime: null
+  lastPullServerTime: null,
+  sourceId: null,
+  review: null,
+  heldChangeCount: 0
 };
 
 export interface UseOnlineCachedSnapshotOptions {
@@ -37,6 +41,7 @@ export interface UseOnlineCachedSnapshotResult {
   isRefreshing: boolean;
   refreshCache: () => Promise<CachedSnapshot>;
   refreshOnline: () => Promise<CachedSnapshot>;
+  acceptReview: () => Promise<CachedSnapshot>;
 }
 
 function getBrowserOnlineState(): boolean {
@@ -44,7 +49,7 @@ function getBrowserOnlineState(): boolean {
 }
 
 function errorMessage(caught: unknown): string {
-  return caught instanceof Error ? caught.message : "Не удалось обновить онлайн-данные.";
+  return syncErrorMessage(caught);
 }
 
 export function useOnlineCachedSnapshot(
@@ -86,10 +91,10 @@ export function useOnlineCachedSnapshot(
     }
 
     try {
-      await refreshOnlineCache({ database, api, clientId, since });
+      const result = await refreshOnlineCache({ database, api, clientId, since });
       const refreshed = await refreshCache();
       if (mountedRef.current) {
-        setStatus("online");
+        setStatus(result.mode === "review" ? "cache" : "online");
       }
       return refreshed;
     } catch (caught) {
@@ -101,6 +106,23 @@ export function useOnlineCachedSnapshot(
       return cached;
     }
   }, [api, clientId, database, refreshCache, since]);
+
+  const acceptReview = useCallback(async (): Promise<CachedSnapshot> => {
+    try {
+      await acceptStagedSnapshot({ database, api, clientId });
+      const refreshed = await refreshCache();
+      if (!refreshed.review) {
+        await refreshOnline();
+      }
+      return refreshed;
+    } catch (caught) {
+      if (mountedRef.current) {
+        setError(errorMessage(caught));
+        setStatus("error");
+      }
+      return refreshCache();
+    }
+  }, [api, clientId, database, refreshCache, refreshOnline]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -166,6 +188,7 @@ export function useOnlineCachedSnapshot(
     isLoadingCache: status === "loading-cache",
     isRefreshing: status === "refreshing",
     refreshCache,
-    refreshOnline
+    refreshOnline,
+    acceptReview
   };
 }

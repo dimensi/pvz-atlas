@@ -1,5 +1,59 @@
 # ExecPlans
 
+## Sync Status User Journey
+
+Status: completed in the isolated worktree; not deployed
+
+Intent:
+- Make the operator's current data state visible from every screen without exposing IDs or versions.
+- Resolve routine collisions and full-table refreshes automatically while keeping old local edits recoverable.
+
+Journey:
+- Opening the app shows cached data immediately and a visible server-check state; completion shows when the table was last checked.
+- Offline work shows that the app is offline and counts edits saved on the device. Reconnection retries automatically.
+- A failed server check shows a clear failure and a retry action; the UI never calls cached data current merely because the queue is empty.
+- A source switch or remote removal replaces stale cached rows automatically and shows a readable notice with before/after counts. Changes tied to the previous source or removed records stay on the device with full record backups, are never sent to the wrong table, and can be downloaded. The prior cache is also archived before every source switch, including one after a successful push.
+- A same-field collision is resolved automatically in favor of Sheets, then a visible notice links to a readable history. Reading the notice acknowledges it without asking the operator to choose values.
+
+Implementation:
+- Keep a durable last-sync attempt state and derive a compact global status from IndexedDB, connection state, pending edits, review, and unread resolution notices.
+- Mark a truly empty installation before its first offline creation, and check that marker inside the pull transaction, so a migrated unbound queue or a concurrent new edit cannot be mistaken for a safe first draft. Archive unverified old cache rows before replacing them.
+- Refresh on app open, reconnect, and return to the tab; show last verified time on the sync page.
+- Use one global status signal in the sticky header and a detailed state/actions page. A legacy staged review remains readable during migration, while new checks apply safe full snapshots without an approval step.
+
+Verification:
+- Focused state-priority and read/unread tests; browser checks at 320 px and seven 390 px screenshots of verified, offline, error, conflict, and source-switch states; lint, typecheck, 173 unit tests, and build passed. The browser used synthetic Sheets responses, so real Sheets access remains unverified.
+
+Review:
+- UI and server agents reviewed the journey. Their findings on first-draft identity, old-record backups, cross-source conflict matching, source-switch visibility, owner/visit removal notices, and a switch after successful push were fixed. A release review found that an earlier field collision blocked a later unrelated patch; this was fixed and tested.
+
+## Server-Authoritative Offline Sync
+
+Status: completed in the isolated worktree; not deployed
+
+Intent:
+- Treat the current Google Sheet as the source of truth while preserving offline reads and edits.
+- Prevent a cached production queue from being sent to a different spreadsheet after a bad deploy.
+- Replace technical conflict choices with automatic field-level reconciliation and understandable notices.
+- Replace stale cache rows from a validated full server snapshot, including when the spreadsheet changes.
+
+Implementation:
+- Add an opaque spreadsheet source ID to full pull responses and require the same ID on push; reject mismatches before writing.
+- Read a fresh Sheets snapshot for push. Compare touched field base values, merge unrelated edits, prefer the server for true same-field collisions, and retain a readable record of unapplied local intent.
+- Keep IndexedDB as a complete server cache plus a source-bound offline change queue. Pull full snapshots, remove clean records absent remotely, and never drop queued changes silently.
+- Automatically apply validated full snapshots; show a nonblocking replacement notice and keep old-source and removed-record changes plus full local record backups. Never cross-push them.
+- Replace raw conflict IDs and version cards with source/refresh status and human-readable notices; keep normal updates automatic.
+- Preserve legacy queued changes during migration and expose a local backup download when they cannot be safely attributed to the current source. A first-ever offline draft with no earlier pull is bound and sent on its first connection.
+- Keep the legacy staged-review action available for devices already carrying staged state; a fresh online check clears it by applying the current validated snapshot.
+
+Verification:
+- Unit tests cover source mismatch, automatic stale row removal and source switch, legacy queue preservation and backup, explicit first-ever offline marker, cross-source conflict isolation, same/different-field merge, and blocked mutation during a legacy staged review.
+- Local browser verification at 320 px showed global status and the offline queued-edit journey. No real Google Sheet was accessed.
+- `pnpm run lint`, `pnpm run typecheck`, `pnpm test`, `pnpm run build` passed.
+
+Review:
+- User explicitly requested parallel sub-agents. Server and UI slices were implemented in parallel, then the UI agent reviewed integrated source-switch, offline, and review flows. Its P1/P2 findings were fixed.
+
 ## App Login Auth
 
 Status: completed
